@@ -1,0 +1,49 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Test coverage and profiling output
+coverage.*
+cover.html
+*.cover
+*.prof
+*.pprof
+
+# Go workspace / tooling
+go.work
+go.work.sum
+/vendor/
+
+# Local state accidentally produced by manual runs
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Node tooling installed locally for the markdown checks
+node_modules/
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.tmp
+*.bak
+.idea/
+.vscode/
+
+# Internal working documents: specifications, plans, audits and agent tooling.
+# These drive the work but are not part of the published repository.
+/specs/
+/.specify/
+/.claude/
+/*_AUDIT.md

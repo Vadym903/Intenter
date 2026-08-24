@@ -1,0 +1,40 @@
+name: Question
+description: Prefer Discussions — use this only if you cannot post there.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Questions belong in
+        [Discussions → Q&A](https://github.com/Vadym903/Intenter/discussions/categories/q-a).**
+        Answers there are findable by the next person with the same question, and
+        they get answered sooner. Most things are already covered by
+        [getting started](https://github.com/Vadym903/Intenter/blob/main/docs/getting-started.md),
+        [troubleshooting](https://github.com/Vadym903/Intenter/blob/main/docs/troubleshooting.md)
+        and the [FAQ](https://github.com/Vadym903/Intenter/blob/main/docs/faq.md).
+
+        If Discussions are unavailable to you, continue here.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What you already tried
+      description: Docs you read, commands you ran, and what you saw.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Intenter version and OS
+      description: Output of `intenter version`, plus your operating system.
+      placeholder: "intenter 0.1.0 — macOS 14.4 arm64"
+    validations:
+      required: false

@@ -1,0 +1,23 @@
+{
+  "hook_event_name": "PermissionRequest",
+  "session_id": "5f1c2b7e-0e4a-4a1d-9f2c-6b8a3d5e7c19",
+  "cwd": "/Users/u/projects/demo",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm run cleanup"
+  },
+  "permission_suggestions": [
+    {
+      "type": "addRules",
+      "rules": [
+        {
+          "toolName": "Bash",
+          "ruleContent": "npm run cleanup",
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    }
+  ]
+}

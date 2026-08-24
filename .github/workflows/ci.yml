@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Nothing in CI writes to the repository; the token can only read it.
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # The update prompt is meant to appear in a real interactive shell, so the
+      # tests drive one. A shell that is absent is skipped rather than failed,
+      # which would quietly reduce coverage — so the runners get all of them.
+      - name: Install the shells the start-up check supports
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y fish zsh
+
+      - name: Install the shells the start-up check supports (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install fish
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint
+        if: matrix.os == 'ubuntu-latest'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+
+      # The race detector's runtime is C. On Linux the Go tool refuses -race
+      # without cgo, so that one step enables it; on macOS -race has worked
+      # without cgo since Go 1.20, and enabling it there breaks the run: Go
+      # 1.22 writes no LC_UUID into a cgo-linked binary, and macOS 26's dyld
+      # aborts such a test binary with "missing LC_UUID load command" (Go
+      # 1.24+ always writes one, golang/go#68678). The product itself (Build,
+      # Vet, the Windows run) stays CGO_ENABLED=0, and the SQLite driver is
+      # pure Go, so nothing else changes under the tests.
+      # -timeout is above Go's 10-minute default because test/install and
+      # test/e2e legitimately exceed it on a cold runner — see TEST_TIMEOUT in
+      # the Makefile. It still catches a hang; it no longer catches a slow
+      # machine.
+      - name: Test (race)
+        if: matrix.os != 'windows-latest'
+        env:
+          CGO_ENABLED: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+        run: go test ./... -race -count=1 -timeout 30m
+
+      - name: Test
+        if: matrix.os == 'windows-latest'
+        run: go test ./... -count=1 -timeout 30m
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # A CLI reference that has drifted from the binary is worse than none,
+      # because the reader has no way to tell.
+      - name: CLI reference is up to date
+        run: |
+          go run ./tools/gendocs docs/cli
+          git diff --exit-code -- docs/cli || {
+            echo "::error::docs/cli is out of date — run 'make docs' and commit the result"
+            exit 1
+          }
+
+      # The README is the product page, and it drifts one commit at a time: a
+      # claim that lost its link, "open source" slipping back into a sentence,
+      # a version number three releases old, an owner input never filled in.
+      # These rules are the only thing that notices.
+      - name: README and collateral rules
+        run: scripts/check-readme.sh
+
+      - name: The README rules themselves still fire
+        run: scripts/check-readme_test.sh
+
+      # The product was renamed once; the old name may survive only in the
+      # legacy-cleanup code, the changelog's rename entry and the archived specs.
+      - name: The old product name has not crept back
+        run: scripts/check-rename.sh
+
+      - name: Markdown style
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            README.md
+            CONTRIBUTING.md
+            CHANGELOG.md
+            docs/**/*.md
+
+      - name: Links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress --max-retries 3 --accept 200,429
+            README.md CONTRIBUTING.md CHANGELOG.md
+            SECURITY.md SUPPORT.md CODE_OF_CONDUCT.md llms.txt docs
+          fail: true
+
+      # shields.io answers 200 for a repository that does not exist, so a badge
+      # can be broken and green at the same time; the script reads the body. An
+      # unreachable shields.io is a warning — it says nothing about this commit
+      # — while an error badge is a failure, because that is what a visitor
+      # sees on the page.
+      - name: Badges resolve
+        run: |
+          set +e
+          scripts/check-badges.sh
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::warning::shields.io was unreachable; badge check skipped"
+            exit 0
+          fi
+          exit $status
+
+  shellcheck:
+    name: shellcheck (install.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The installer runs under whatever /bin/sh the user's machine provides —
+      # dash on Debian, BusyBox on Alpine — so it is checked as POSIX sh rather
+      # than as bash.
+      - name: ShellCheck
+        run: shellcheck -s sh install.sh scripts/check-rename.sh
+
+  psscriptanalyzer:
+    name: psscriptanalyzer (install.ps1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning -EnableExit
+      # The one-liner runs under whichever PowerShell the user has: Windows
+      # PowerShell 5.1 ships with Windows, pwsh 7 is what most developers add.
+      # Both must at least parse and show help; the installer tests exercise the
+      # rest under pwsh.
+      - name: Parses and runs under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          & .\install.ps1 -Help
+      - name: Parses and runs under pwsh 7
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          & .\install.ps1 -Help
+
+  cross:
+    name: cross-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Cross-compile all targets
+        run: make cross
+
+  snapshot:
+    name: goreleaser snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          install-only: true
+
+      # `goreleaser check` exits 1 for an invalid configuration and 2 for one
+      # that is valid but uses deprecated properties. The `brews` block is the
+      # latter: GoReleaser now prefers Homebrew casks, which Homebrew does not
+      # support on Linux, so the formula stays until that trade is decided —
+      # a deprecation is a warning here, a broken configuration still fails.
+      - name: Validate the release configuration
+        shell: bash
+        run: |
+          set +e
+          goreleaser check
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::warning::.goreleaser.yaml uses deprecated properties; see the check output above"
+            exit 0
+          fi
+          exit "$status"
+
+      # Unsigned, like `make snapshot`: the release key lives only in the
+      # release workflow, which signs and then verifies the real artifacts.
+      - name: Build a snapshot release
+        run: goreleaser release --snapshot --clean --skip=sign
+
+      # A release that is missing a platform is only discovered by the person
+      # on that platform, so the artifact set is asserted rather than eyeballed.
+      - name: All six archives and the checksums are present
+        shell: bash
+        run: |
+          missing=0
+          for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            ls dist/*"${target}"*.tar.gz >/dev/null 2>&1 || { echo "::error::missing archive for ${target}"; missing=1; }
+          done
+          for target in windows_amd64 windows_arm64; do
+            ls dist/*"${target}"*.zip >/dev/null 2>&1 || { echo "::error::missing archive for ${target}"; missing=1; }
+          done
+          ls dist/checksums.txt >/dev/null 2>&1 || { echo "::error::missing checksums.txt"; missing=1; }
+          exit $missing
+
+      # A binary that does not start is a release nobody can use. Only the
+      # host's own build can be executed here — picked by its goos/goarch
+      # directory, since `find` lists the six in no fixed order — and the
+      # other five are started by the release workflow's own matrix.
+      - name: The built binary starts and reports its version
+        shell: bash
+        run: |
+          binary="$(find dist -type f -name intenter -path "*_$(go env GOOS)_$(go env GOARCH)*" -perm -u+x | head -n 1)"
+          [ -n "$binary" ] || { echo "::error::no executable for $(go env GOOS)/$(go env GOARCH) found in dist/"; exit 1; }
+          "$binary" version
+          "$binary" version --json | grep -q '"engine_version"' || {
+            echo "::error::version --json is not the documented shape"; exit 1; }

@@ -1,0 +1,152 @@
+version: 2
+
+project_name: intenter
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: intenter
+    main: ./cmd/intenter
+    binary: intenter
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/Vadym903/Intenter/internal/version.Version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+# The checksums file is signed with the release key (cosign, keyed ECDSA P-256;
+# public half in cosign.pub at the repository root). The updater and the
+# installers verify checksums.txt.sig before trusting the checksums, so a
+# same-origin checksums file is no longer the only integrity control. Local
+# snapshot builds skip signing (`make snapshot`); the release workflow supplies
+# COSIGN_PRIVATE_KEY and COSIGN_PASSWORD.
+signs:
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    args:
+      - sign-blob
+      - --key=env://COSIGN_PRIVATE_KEY
+      - --output-signature=${signature}
+      - --yes
+      - ${artifact}
+
+# The formula and the manifest are generated at release time; the templates
+# under packaging/ document the expected shape and are not used to publish.
+brews:
+  - name: intenter
+    repository:
+      owner: Vadym903
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Vadym903/Intenter"
+    description: "Semantic runtime permission layer for AI coding agents"
+    license: "PolyForm-Noncommercial-1.0.0"
+    install: |
+      bin.install "intenter"
+    test: |
+      system "#{bin}/intenter", "version"
+    caveats: |
+      Run `intenter setup claude` to install the Claude Code integration,
+      then restart any running Claude sessions.
+
+      After `brew upgrade`, run `intenter doctor`; it will tell you if the
+      daemon still needs restarting into the new binary.
+    skip_upload: auto
+
+winget:
+  - name: intenter
+    publisher: Intenter
+    package_identifier: Intenter.Intenter
+    short_description: "Semantic runtime permission layer for AI coding agents"
+    description: |
+      Intenter decides whether an AI coding agent may run a shell command,
+      based on what the command actually does rather than how it is spelled.
+      Approvals record resolved effects and stop applying when the behavior
+      behind a command changes.
+    homepage: "https://github.com/Vadym903/Intenter"
+    license: "PolyForm-Noncommercial-1.0.0"
+    license_url: "https://github.com/Vadym903/Intenter/blob/main/LICENSE"
+    publisher_url: "https://github.com/Vadym903/Intenter"
+    release_notes_url: "https://github.com/Vadym903/Intenter/releases/tag/{{ .Tag }}"
+    tags:
+      - security
+      - ai
+      - developer-tools
+    repository:
+      owner: Vadym903
+      name: winget-pkgs
+      branch: "intenter-{{ .Version }}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    # Until the package is accepted upstream there is nowhere to push, so the
+    # manifest is attached to the release instead and can be installed with
+    # `winget install --manifest`.
+    skip_upload: auto
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  # Not a draft: the installers resolve "latest" by following the redirect from
+  # /releases/latest, and a draft release is invisible to it. The safety this
+  # used to provide comes from the release workflow instead, which installs the
+  # artifacts with the real scripts on all three operating systems before it
+  # publishes them.
+  draft: false
+  # A tag like v0.2.0-rc.1 is published as a pre-release, so it never becomes
+  # "latest" and no one-liner picks it up by accident.
+  prerelease: auto
+  footer: |
+    ---
+
+    **Install**
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh
+    ```
+
+    ```powershell
+    irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1 | iex
+    ```
+
+    Then run `intenter setup claude`.
+
+    See the [changelog](https://github.com/Vadym903/Intenter/blob/main/CHANGELOG.md)
+    for what changed in {{ .Tag }}, and
+    [docs/install.md](https://github.com/Vadym903/Intenter/blob/main/docs/install.md)
+    for pinning, upgrading, uninstalling and verifying downloads by hand.

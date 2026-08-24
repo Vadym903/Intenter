@@ -1,0 +1,113 @@
+name: Bug report
+description: Intenter allowed, blocked or asked about something it should not have — or something broke.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If this is a **security** problem — a way to make
+        Intenter allow what it should block — do not file it here; use
+        [private reporting](https://github.com/Vadym903/Intenter/security/advisories/new)
+        instead. See [SECURITY.md](https://github.com/Vadym903/Intenter/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The decision or failure you saw, in your words.
+      placeholder: "`npm run build` was blocked in a fresh project, with no explanation of which rule fired."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      placeholder: "It should have asked once and then been approvable."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows it. A fixture project beats a description of your real one.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      placeholder: "macOS 14.4 arm64 / Ubuntu 22.04 amd64 / Windows 11 amd64"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Intenter version
+      description: Output of `intenter version`.
+      placeholder: "intenter 0.1.0 (abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`, or "not applicable" if Claude Code is not involved.
+      placeholder: "1.0.0"
+    validations:
+      required: false
+
+  # No `render:` on this one: a rendered textarea cannot be marked required,
+  # and a bug report without the diagnostics costs a round trip every time.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: intenter doctor --json
+      description: >-
+        Paste the output between triple backticks. Redact anything you consider
+        private — paths, project names, hostnames.
+      placeholder: |
+        ```json
+        {"checks": [ ... ]}
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision
+    attributes:
+      label: The decision and its explanation
+      description: >-
+        `intenter history` finds the decision id, `intenter history show <id>`
+        explains which rule or approval decided. Paste the explanation if the
+        report is about a decision.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant daemon or CLI output. `intenter status` shows where the log lives.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (those go through private reporting).
+          required: true

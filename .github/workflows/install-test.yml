@@ -1,0 +1,288 @@
+name: Install test
+
+# The one-liners in the README are the first thing anyone runs, on a machine
+# nobody here can see. This workflow runs those exact commands on fresh
+# ubuntu, macOS and Windows runners.
+#
+# Two modes:
+#   local  — run install.sh / install.ps1 from the checkout (pull requests)
+#   remote — run the documented one-liners, extracted from README.md, against
+#            the published release (after a release, nightly, and as the
+#            post-publish gate called by release.yml)
+
+on:
+  pull_request:
+    paths:
+      - "install.sh"
+      - "install.ps1"
+      - ".github/workflows/install-test.yml"
+      - "test/install/**"
+      - "tools/releaseserve/**"
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "install.ps1"
+      - ".github/workflows/install-test.yml"
+  release:
+    types: [published]
+  schedule:
+    # Nightly, so a release that stops installing — a moved asset, an expired
+    # certificate, a GitHub change — is noticed before a user reports it.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to install (blank for latest)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to install"
+        required: false
+        type: string
+      mode:
+        description: "local or remote"
+        required: false
+        default: remote
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+  # A release/nightly run tests what users actually get; everything else tests
+  # the scripts in the branch.
+  MODE: ${{ inputs.mode || (github.event_name == 'release' && 'remote') || (github.event_name == 'schedule' && 'remote') || 'local' }}
+  VERSION: ${{ inputs.version || github.event.release.tag_name || '' }}
+
+jobs:
+  install:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # Everything below assumes a machine that has never seen Intenter. If
+      # one is already on PATH the results would be meaningless.
+      - name: Assert a fresh machine
+        shell: bash
+        run: |
+          if command -v intenter >/dev/null 2>&1; then
+            echo "::error::intenter is already on PATH; this runner is not fresh"
+            exit 1
+          fi
+
+      # A published release is a prerequisite for the remote mode, and for the
+      # local mode's default of "latest". Before the first release exists there
+      # is nothing to install, so the hermetic tests stand in — they prove the
+      # scripts work without proving the release does.
+      - name: Is there a release to install?
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$VERSION" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 | wc -l | tr -d ' ')"
+          if [ "$count" = "0" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: No release yet — run the hermetic installer tests instead
+        if: steps.release.outputs.available == 'false'
+        shell: bash
+        run: |
+          echo "::notice::no published release yet; running the hermetic installer tests"
+          # Above Go's 10-minute default: this suite starts a PowerShell per
+          # scenario on Windows and has hit it. See TEST_TIMEOUT in the Makefile.
+          go test ./test/install/... -count=1 -timeout 30m
+
+      # The documented commands come out of the README rather than being
+      # retyped here, so the docs and the test cannot drift apart.
+      - name: Extract the documented one-liners
+        if: steps.release.outputs.available == 'true' && env.MODE == 'remote'
+        shell: bash
+        run: |
+          posix="$(grep -m1 '^curl -fsSL .*install\.sh | sh$' README.md)"
+          windows="$(grep -m1 '^irm .*install\.ps1 | iex$' README.md)"
+          [ -n "$posix" ] || { echo "::error::no install.sh one-liner found in README.md"; exit 1; }
+          [ -n "$windows" ] || { echo "::error::no install.ps1 one-liner found in README.md"; exit 1; }
+          echo "POSIX_ONELINER=$posix" >> "$GITHUB_ENV"
+          echo "WINDOWS_ONELINER=$windows" >> "$GITHUB_ENV"
+          echo "documented: $posix"
+          echo "documented: $windows"
+
+      - name: Install (POSIX)
+        if: steps.release.outputs.available == 'true' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          start=$(date +%s)
+          if [ "$MODE" = "remote" ]; then
+            if [ -n "$VERSION" ]; then
+              INTENTER_VERSION="$VERSION" sh -c "$POSIX_ONELINER"
+            else
+              sh -c "$POSIX_ONELINER"
+            fi
+          else
+            if [ -n "$VERSION" ]; then
+              sh install.sh --version "$VERSION"
+            else
+              sh install.sh
+            fi
+          fi
+          elapsed=$(( $(date +%s) - start ))
+          echo "install took ${elapsed}s"
+          echo "ELAPSED=$elapsed" >> "$GITHUB_ENV"
+
+      - name: Install (Windows)
+        if: steps.release.outputs.available == 'true' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $elapsed = Measure-Command {
+            if ($env:MODE -eq 'remote') {
+              if ($env:VERSION) { $env:INTENTER_VERSION = $env:VERSION }
+              Invoke-Expression $env:WINDOWS_ONELINER
+            } else {
+              if ($env:VERSION) { ./install.ps1 -Version $env:VERSION } else { ./install.ps1 }
+            }
+          }
+          Write-Host "install took $([int]$elapsed.TotalSeconds)s"
+          "ELAPSED=$([int]$elapsed.TotalSeconds)" | Out-File -Append $env:GITHUB_ENV
+
+      # A minute is the promise in the specification. On a nightly run a slow
+      # network is not worth failing over; on a pull request or a release it is.
+      - name: Install finished within a minute
+        if: steps.release.outputs.available == 'true'
+        shell: bash
+        run: |
+          if [ "${ELAPSED:-0}" -lt 60 ]; then
+            echo "install took ${ELAPSED}s"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "::warning::install took ${ELAPSED}s, over the 60s target"
+          else
+            echo "::error::install took ${ELAPSED}s, over the 60s target"
+            exit 1
+          fi
+
+      # A new shell, because that is what a user opens next. This is the only
+      # check that proves the PATH change actually reached anywhere.
+      - name: The binary works in a new shell (bash)
+        if: steps.release.outputs.available == 'true' && matrix.os != 'windows-latest'
+        shell: bash
+        run: bash -lc 'export PATH="$HOME/.local/bin:$PATH"; intenter version'
+
+      - name: The binary works in a new shell (zsh)
+        if: steps.release.outputs.available == 'true' && matrix.os == 'macos-latest'
+        shell: bash
+        run: zsh -lc 'export PATH="$HOME/.local/bin:$PATH"; intenter version'
+
+      - name: The binary works in a new shell (PowerShell)
+        if: steps.release.outputs.available == 'true' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + $env:Path
+          intenter version
+
+      - name: The installed version is the expected one
+        if: steps.release.outputs.available == 'true' && env.VERSION != ''
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$LOCALAPPDATA/Intenter/bin:$PATH"
+          expected="${VERSION#v}"
+          got="$(intenter version | head -n 1 | cut -d' ' -f2)"
+          [ "$got" = "$expected" ] || { echo "::error::installed $got, expected $expected"; exit 1; }
+
+      # The update check has to work against the same release the installer just
+      # used; if the two disagree about where releases live, every update fails
+      # with a 404 that nobody sees until it is published.
+      - name: The update check finds the release the installer used
+        if: steps.release.outputs.available == 'true' && env.VERSION != ''
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$LOCALAPPDATA/Intenter/bin:$PATH"
+          intenter update --check --json > check.json || {
+            echo "::error::update --check failed"; cat check.json; exit 1; }
+          grep -q '"latest"' check.json || {
+            echo "::error::update --check --json is not the documented shape"; cat check.json; exit 1; }
+          intenter update --plan >/dev/null || {
+            echo "::error::update --plan failed"; exit 1; }
+
+      # Installing is not setting up: the installer manages PATH and nothing
+      # else. The start-up check arrives with `setup claude`, so a plain install
+      # must leave shell start-up files without one.
+      - name: Installing alone writes no start-up check
+        if: steps.release.outputs.available == 'true' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          intenter update startup status || {
+            echo "::error::update startup status failed"; exit 1; }
+          if grep -l 'intenter:update-check' "$HOME/.zshrc" "$HOME/.bashrc" 2>/dev/null; then
+            echo "::error::installing wrote a start-up block; only setup claude should"
+            exit 1
+          fi
+
+      # Setup is where a broken install actually shows up, so it is exercised
+      # against a shim rather than a real Claude Code.
+      - name: Claude Code integration (dry run)
+        if: steps.release.outputs.available == 'true' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p "$HOME/shims"
+          printf '#!/bin/sh\necho 2.1.233\n' > "$HOME/shims/claude"
+          chmod +x "$HOME/shims/claude"
+          export PATH="$HOME/shims:$HOME/.local/bin:$PATH"
+          intenter setup claude --dry-run
+
+      - name: Uninstall leaves nothing behind
+        if: steps.release.outputs.available == 'true' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          if [ "$MODE" = "remote" ]; then
+            sh -c "$POSIX_ONELINER" -s -- --uninstall || curl -fsSL \
+              https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --uninstall
+          else
+            sh install.sh --uninstall
+          fi
+          [ ! -x "$HOME/.local/bin/intenter" ] || { echo "::error::the binary survived uninstall"; exit 1; }
+          ! grep -q "intenter" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile" 2>/dev/null \
+            || { echo "::error::a PATH entry survived uninstall"; exit 1; }
+
+      - name: Uninstall leaves nothing behind (Windows)
+        if: steps.release.outputs.available == 'true' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          if ($env:MODE -eq 'remote') {
+            & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Uninstall
+          } else {
+            ./install.ps1 -Uninstall
+          }
+          $binary = Join-Path $env:LOCALAPPDATA 'Intenter\bin\intenter.exe'
+          if (Test-Path $binary) { throw "the binary survived uninstall" }
+
+      - name: Collect logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-test-${{ matrix.os }}
+          path: |
+            ~/.local/share/intenter/logs/
+            ~/Library/Application Support/Intenter/logs/
+          if-no-files-found: ignore

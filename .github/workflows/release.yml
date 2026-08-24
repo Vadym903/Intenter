@@ -1,0 +1,279 @@
+name: Release
+
+# A release is what the one-line installers fetch, so it is published only
+# after the exact artifacts about to be published have been installed by the
+# real scripts on all three operating systems.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+# Only the publish and demote jobs write to the repository; the build and
+# verification jobs run with a read-only token.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  build:
+    name: build artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # The gates are the same checks the CI workflow runs, spelled out here
+      # because `make docs-check`/`lint-scripts` assume lychee, markdownlint
+      # and PSScriptAnalyzer are installed — on this runner they are not, and a
+      # release must not fail on a missing linter rather than on a real defect.
+      - name: Install script linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          npm install -g markdownlint-cli2
+
+      - name: Gates — module, tests, CLI reference
+        run: |
+          make tidy-check test
+          make docs
+          git diff --exit-code -- docs/cli
+
+      - name: Gates — installer scripts
+        shell: bash
+        run: |
+          shellcheck -s sh install.sh scripts/check-rename.sh
+          pwsh -NoProfile -Command "Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck; Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning -EnableExit"
+
+      - name: Gates — README and collateral rules
+        run: |
+          scripts/check-readme.sh
+          scripts/check-readme_test.sh
+          scripts/check-rename.sh
+          markdownlint-cli2 "README.md" "docs/**/*.md" "CONTRIBUTING.md"
+
+      - name: Gates — links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --offline --no-progress
+            README.md CONTRIBUTING.md CHANGELOG.md
+            SECURITY.md SUPPORT.md CODE_OF_CONDUCT.md llms.txt docs
+          fail: true
+
+      - name: Require a changelog entry for this tag
+        run: scripts/changelog-section.sh "${{ github.ref_name }}"
+
+      # cosign.pub ships in the binary and the installers as the pinned release
+      # key. Until the maintainer generates the real pair (`cosign
+      # generate-key-pair`, docs/release-process.md#signing) the file holds a
+      # verification-only placeholder whose private half was destroyed, so
+      # nothing signed by CI could ever verify — refuse to build a release on it.
+      - name: Refuse to release with the placeholder signing key
+        run: |
+          fingerprint="$(openssl pkey -pubin -in cosign.pub -outform DER | sha256sum | cut -d' ' -f1)"
+          if [ "$fingerprint" = "91c6fb185e9ea57a011612868435791ac483d9a94d4b24de6d6fb3dbfd6e38df" ]; then
+            echo "::error::cosign.pub is still the placeholder key; generate the release key pair first (docs/release-process.md#signing)"
+            exit 1
+          fi
+          cmp -s cosign.pub internal/updater/cosign.pub || { echo "::error::internal/updater/cosign.pub differs from cosign.pub"; exit 1; }
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Build the release without publishing it
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean --skip=publish
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  verify-installers:
+    name: verify installers (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # The artifacts are served exactly as GitHub Releases serves them, so the
+      # scripts run unmodified against the files that are about to be published.
+      - name: Start the local release server
+        shell: bash
+        run: |
+          go run ./tools/releaseserve dist/ --tag "${{ github.ref_name }}" > server-url.txt 2>server.log &
+          for _ in $(seq 1 50); do
+            [ -s server-url.txt ] && break
+            sleep 0.2
+          done
+          base="$(head -n 1 server-url.txt)"
+          [ -n "$base" ] || { cat server.log; exit 1; }
+          echo "INTENTER_LATEST_URL=$base/releases/latest" >> "$GITHUB_ENV"
+          echo "INTENTER_DOWNLOAD_BASE=$base/releases/download" >> "$GITHUB_ENV"
+
+      - name: Install with install.sh
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          start=$(date +%s)
+          sh install.sh
+          echo "install took $(( $(date +%s) - start ))s"
+          [ $(( $(date +%s) - start )) -lt 60 ] || { echo "install exceeded 60s"; exit 1; }
+
+      - name: Install with install.ps1
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $elapsed = Measure-Command { ./install.ps1 }
+          Write-Host "install took $($elapsed.TotalSeconds)s"
+          if ($elapsed.TotalSeconds -ge 60) { throw "install exceeded 60s" }
+
+      - name: The version is available in a new shell
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          got="$(bash -lc 'export PATH="$HOME/.local/bin:$PATH"; intenter version' | head -n 1 | awk '{print $2}')"
+          [ "$got" = "$expected" ] || { echo "installed $got, expected $expected"; exit 1; }
+        if: matrix.os != 'windows-latest'
+
+      - name: The version is available in a new shell (Windows)
+        shell: pwsh
+        run: |
+          $expected = "${{ github.ref_name }}".TrimStart('v')
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + $env:Path
+          $got = (& intenter version | Select-Object -First 1).Split(' ')[1]
+          if ($got -ne $expected) { throw "installed $got, expected $expected" }
+        if: matrix.os == 'windows-latest'
+
+      - name: Upgrade from an older install
+        shell: bash
+        run: go test ./test/install/... -count=1 -run 'Upgrade'
+
+      - name: Uninstall
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: sh install.sh --uninstall
+
+      - name: Uninstall (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./install.ps1 -Uninstall
+
+      - name: Validate the winget manifest
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $manifest = Get-ChildItem -Path dist -Recurse -Filter "*.installer.yaml" |
+            Select-Object -First 1
+          if ($manifest) { winget validate --manifest $manifest.Directory }
+          else { Write-Host "no winget manifest in dist/" }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs-${{ matrix.os }}
+          path: |
+            server.log
+            server-url.txt
+
+  publish:
+    name: publish the release
+    needs: verify-installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - uses: sigstore/cosign-installer@v3
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+  post-verify:
+    name: verify the published one-liners
+    needs: publish
+    uses: ./.github/workflows/install-test.yml
+    with:
+      version: ${{ github.ref_name }}
+      mode: remote
+    permissions:
+      contents: read
+
+  demote-on-failure:
+    name: demote a release that failed verification
+    needs: post-verify
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # "latest" is what every install one-liner resolves to, so a release that
+      # cannot be installed must stop being it. Marking it a pre-release rolls
+      # "latest" back to the previous stable release without deleting anything.
+      - name: Mark the release as a pre-release and say why
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          gh release view "$tag" --json body --jq .body > notes.md
+          {
+            echo
+            echo "> **Verification failed — do not use.**"
+            echo "> The published one-liners could not install this release on every"
+            echo "> supported platform, so it has been demoted and \`latest\` points at"
+            echo "> the previous stable release."
+          } >> notes.md
+          gh release edit "$tag" --prerelease --notes-file notes.md
+          echo "::error::$tag failed post-publish verification and was demoted"
+          exit 1

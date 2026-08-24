@@ -1,0 +1,27 @@
+# Markdown style for the documentation set.
+#
+# The rules that are off are off deliberately: line length because prose wraps
+# where it reads best rather than at a column, and inline HTML because the
+# smoke-test markers in the walkthrough are HTML comments.
+config:
+  MD013: false # line length
+  MD033: false # inline HTML
+  # MD014 objects to a `$` prompt in a block that shows no output. Here the
+  # prompt is not decoration: getting-started.md documents it as the way to tell
+  # a command from its output, and test/e2e/docs_smoke_test.go parses it to
+  # decide which lines to execute against the real binary. Dropping it would
+  # make the convention inconsistent and the smoke test wrong.
+  MD014: false # `$` prompts without output
+  MD024:
+    siblings_only: true # repeated headings under different parents are fine
+  MD041: false # the generated CLI pages start with a marker comment
+
+globs:
+  - "README.md"
+  - "CONTRIBUTING.md"
+  - "CHANGELOG.md"
+  - "docs/**/*.md"
+
+ignores:
+  - "node_modules/**"
+  - "specs/**"

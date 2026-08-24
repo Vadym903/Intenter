@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or "how do I…"
+    url: https://github.com/Vadym903/Intenter/discussions/categories/q-a
+    about: Ask in Discussions — questions get answered faster there and stay findable.
+  - name: Documentation
+    url: https://github.com/Vadym903/Intenter/tree/main/docs
+    about: Getting started, how it works, the security model, troubleshooting and the CLI reference.
+  - name: Report a security vulnerability
+    url: https://github.com/Vadym903/Intenter/security/advisories/new
+    about: Never open a public issue for a security problem — report it privately here.

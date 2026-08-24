@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose a behavior, an integration or an ergonomic change.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Behavior is decided in
+        [`specs/001-agentguard-prototype/PROTOTYPE_SPEC.md`](https://github.com/Vadym903/Intenter/blob/main/specs/001-agentguard-prototype/PROTOTYPE_SPEC.md).
+        A proposal that changes a rule, a decision class or an invariant is a
+        specification change first and code second — say so below and it will be
+        treated that way.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you unable to do today, and what does it cost you? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should Intenter do instead? Include the command, flag or decision you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including workarounds you are using now, and why they are not enough.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to implement it?
+      options:
+        - "I would like to implement it, after agreeing on the design"
+        - "I could help with testing or review"
+        - "No, I am proposing it only"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions and this is not a duplicate.
+          required: true

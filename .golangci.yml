@@ -1,0 +1,68 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - depguard
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/Vadym903/Intenter
+  errcheck:
+    check-type-assertions: true
+  misspell:
+    locale: US
+    # Comments only. Strings are checked literally and the default mode flags
+    # text that is spelled the way a program requires it: grep's `--colour`
+    # alias, a `C:\other` test path (the `\o` is read as an escape, leaving
+    # "ther"), a deliberately unknown config key in a fixture.
+    mode: restricted
+  depguard:
+    rules:
+      # INVARIANT I-7: core packages must never depend on agent adapters or the
+      # CLI layer. Only internal/cli, internal/adapter/**, cmd/**, tools/** and
+      # test/** may import adapters — tools/gendocs reads the command tree to
+      # generate the CLI reference, which is a build-time concern rather than a
+      # dependency of the product.
+      core-inward-only:
+        list-mode: lax
+        files:
+          - "**/internal/action/**"
+          - "**/internal/parser/**"
+          - "**/internal/resolver/**"
+          - "**/internal/scope/**"
+          - "**/internal/policy/**"
+          - "**/internal/approval/**"
+          - "**/internal/audit/**"
+          - "**/internal/storage/**"
+          - "**/internal/daemon/**"
+          - "**/internal/ipc/**"
+          - "**/internal/platform/**"
+          - "**/internal/config/**"
+          - "**/internal/version/**"
+          - "**/internal/logging/**"
+          - "**/internal/updater/**"
+        deny:
+          - pkg: github.com/Vadym903/Intenter/internal/adapter
+            desc: "core packages must not import agent adapters (PROTOTYPE_SPEC I-7)"
+          - pkg: github.com/Vadym903/Intenter/internal/cli
+            desc: "core packages must not import the CLI layer (PROTOTYPE_SPEC I-7)"
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+  max-issues-per-linter: 0
+  max-same-issues: 0
