@@ -28,8 +28,31 @@ go.work.sum
 .env.*
 !.env.example
 
+# Private key material. The *public* half of the release signing key is tracked
+# on purpose — cosign.pub and internal/updater/cosign.pub, which the release
+# workflow checks are byte-identical — and none of the rules below match it.
+# Only the private half must never be committed: `cosign generate-key-pair`
+# writes cosign.key straight into the working directory, one `git add -A` away
+# from being public forever, and a leaked signing key means every release
+# signature has to be rotated. A fixture that genuinely needs one of these
+# extensions can still be added with `git add -f`.
+*.key
+*.pem
+*.p12
+*.pfx
+cosign.key
+id_rsa
+id_ecdsa
+id_ed25519
+
 # Node tooling installed locally for the markdown checks
 node_modules/
+
+# lychee-action drops this into the workspace during the link check. GoReleaser
+# refuses to build from a dirty tree, and the link check runs before it in the
+# release workflow, so an untracked directory here fails the release.
+lychee/
+.lycheecache
 
 # Editors and OS
 .DS_Store
