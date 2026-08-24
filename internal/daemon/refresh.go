@@ -55,6 +55,16 @@ func newRefreshWatch(executablePath string) *refreshWatch {
 	if executablePath != "" {
 		if info, err := os.Stat(executablePath); err == nil {
 			watch.executable = info
+			// On Windows an os.FileInfo does not carry the file's identity
+			// until something asks for it: the comparison reopens the recorded
+			// path to read the volume and file index. An upgrade happens while
+			// the daemon sits idle, so the first comparison happens after the
+			// replacement — the lazy read then sees the *new* file and reports
+			// the two as identical. Comparing the record with itself here
+			// forces that read now, while the path still names the file this
+			// process is actually running. One extra open at startup, on the
+			// platform where the question is hardest to answer later.
+			_ = os.SameFile(info, info)
 		}
 	}
 	return watch
