@@ -16,6 +16,14 @@ export CGO_ENABLED := 0
 # a hang detector, just one set above the work.
 TEST_TIMEOUT := 30m
 
+# The markdownlint the CI docs job runs, via markdownlint-cli2-action@v16.
+# Pinned and fetched with npx so a local `make docs-check` lints with exactly
+# what CI lints with, and needs no global install. Before this was pinned, CI
+# ran v0.13.0 while the release workflow's unpinned `npm install -g` pulled
+# v0.23.2 — the same files passed in one and failed in the other. Bump this and
+# the action's version together, never one alone.
+MARKDOWNLINT_VERSION := 0.13.0
+
 .PHONY: all build test test-race lint lint-scripts e2e install-test cross snapshot \
 	clean fmt tidy tidy-check docs docs-check demo social help
 
@@ -85,7 +93,7 @@ docs:
 ## docs-check: verify the docs are regenerated, linted, linked and placeholder-free
 docs-check: docs
 	git diff --exit-code -- docs/cli
-	markdownlint-cli2 "README.md" "docs/**/*.md" "CONTRIBUTING.md"
+	npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION) "README.md" "docs/**/*.md" "CONTRIBUTING.md"
 	lychee --offline --no-progress README.md CONTRIBUTING.md CHANGELOG.md \
 		SECURITY.md SUPPORT.md CODE_OF_CONDUCT.md llms.txt docs
 	scripts/check-readme.sh

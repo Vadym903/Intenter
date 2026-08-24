@@ -35,14 +35,22 @@ jobs:
           cache: true
 
       # The gates are the same checks the CI workflow runs, spelled out here
-      # because `make docs-check`/`lint-scripts` assume lychee, markdownlint
-      # and PSScriptAnalyzer are installed — on this runner they are not, and a
+      # because `make docs-check`/`lint-scripts` assume lychee and
+      # PSScriptAnalyzer are installed — on this runner they are not, and a
       # release must not fail on a missing linter rather than on a real defect.
+      #
+      # Markdown *style* is deliberately not among them. It runs in CI, where a
+      # complaint costs a follow-up commit; here it would cost a release. The
+      # difference is not hypothetical: an unpinned `npm install -g` once picked
+      # up a markdownlint release whose new rule wanted a space inside every
+      # `|---|---|`, and 613 of those across 55 files blocked a tagged release
+      # that CI had reported green. A gate here must block what makes a release
+      # *wrong* — untested code, unsigned artifacts, missing notes, generated
+      # docs out of sync — not what makes documentation untidy.
       - name: Install script linters
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          npm install -g markdownlint-cli2
 
       - name: Gates — module, tests, CLI reference
         run: |
@@ -56,12 +64,14 @@ jobs:
           shellcheck -s sh install.sh scripts/check-rename.sh
           pwsh -NoProfile -Command "Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck; Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning -EnableExit"
 
+      # These guard truthfulness rather than tidiness — licensing, the canonical
+      # sentence, the "not open source" wording, one commercial contact, the
+      # section contract — so they do belong in front of a publish.
       - name: Gates — README and collateral rules
         run: |
           scripts/check-readme.sh
           scripts/check-readme_test.sh
           scripts/check-rename.sh
-          markdownlint-cli2 "README.md" "docs/**/*.md" "CONTRIBUTING.md"
 
       - name: Gates — links
         uses: lycheeverse/lychee-action@v2
@@ -132,7 +142,10 @@ jobs:
       - name: Start the local release server
         shell: bash
         run: |
-          go run ./tools/releaseserve dist/ --tag "${{ github.ref_name }}" > server-url.txt 2>server.log &
+          # Flags before the directory: Go's flag package stops parsing at the
+          # first non-flag argument, so `dist/ --tag vX` leaves three positional
+          # arguments and releaseserve exits with its usage.
+          go run ./tools/releaseserve --tag "${{ github.ref_name }}" dist/ > server-url.txt 2>server.log &
           for _ in $(seq 1 50); do
             [ -s server-url.txt ] && break
             sleep 0.2

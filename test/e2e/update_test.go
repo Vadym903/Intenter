@@ -590,7 +590,7 @@ func runUnderPTY(t *testing.T, env *Env, command string) (string, error) {
 	// A pseudo-terminal without a terminal type is not one every shell will
 	// use. fish refuses to set up the terminal and skips the start-up work the
 	// prompt depends on, so the test fails for the environment rather than for
-	// the behaviour. An interactive session always has TERM; CI runners do not,
+	// the behavior. An interactive session always has TERM; CI runners do not,
 	// which is why this only ever failed there.
 	environ := env.environ()
 	if os.Getenv("TERM") == "" {

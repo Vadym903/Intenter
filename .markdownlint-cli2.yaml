@@ -16,11 +16,14 @@ config:
     siblings_only: true # repeated headings under different parents are fine
   MD041: false # the generated CLI pages start with a marker comment
   # MD060 objects to `|---|---|` separator rows, wanting a space inside every
-  # pipe. It arrived in a markdownlint release after this repository was
-  # written and flagged 613 rows across 55 of the 60 linted files at once —
+  # pipe. It flagged 613 rows across 55 of the 60 linted files at once —
   # including every page `tools/gendocs` generates, which would mean teaching
   # the generator a spacing style to satisfy a rule about whitespace inside a
   # row nobody reads. The compact separator is this project's convention.
+  #
+  # The pinned version (MARKDOWNLINT_VERSION in the Makefile) predates this
+  # rule, so it changes nothing today. It is set so that raising the pin is a
+  # decision about new rules worth adopting, not an ambush.
   MD060: false # separator-row pipe spacing
 
 globs:

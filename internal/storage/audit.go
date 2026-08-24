@@ -286,7 +286,7 @@ func (r *AuditRepo) CountByDecisionSince(ctx context.Context, since time.Time) (
 // It counts in SQL rather than listing and tallying in Go, because a session
 // can hold thousands of events and the notice is written while the user is
 // closing their terminal. Decision and Limit are ignored: a summary that
-// honoured either would be a summary of a slice of the truth.
+// honored either would be a summary of a slice of the truth.
 func (r *AuditRepo) Summarize(ctx context.Context, filter action.AuditFilter) (action.ActivitySummary, error) {
 	where := make([]string, 0, 4)
 	args := make([]any, 0, 4)

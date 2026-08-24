@@ -100,7 +100,7 @@ func TestAnUpgradeIsNoticedWithoutAnEarlierComparison(t *testing.T) {
 	// whether it changed. Nothing forced the recorded stat to be compared
 	// first, which on Windows is what makes its identity readable at all.
 	//
-	// The neighbouring tests all compare once before replacing, so they cannot
+	// The neighboring tests all compare once before replacing, so they cannot
 	// catch this — and did not: the daemon shipped unable to notice its own
 	// upgrade on Windows.
 	path := installedBinary(t, "old")
