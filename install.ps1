@@ -75,6 +75,7 @@ $LatestUrl = if ($env:INTENTER_LATEST_URL) { $env:INTENTER_LATEST_URL } else { "
 $AllowInsecureDownload = $DownloadBase.Contains('http://') -or $LatestUrl.Contains('http://')
 
 # Exit codes, so a script wrapping this one can tell the cases apart.
+$ExitOK = 0
 $ExitUsage = 1
 $ExitDownload = 2
 $ExitChecksum = 3
@@ -931,3 +932,12 @@ if ($Uninstall) {
 } else {
     Invoke-Install
 }
+
+# Success is stated, not implied. Every failure path above exits with its own
+# documented code; falling off the end instead would leave $LASTEXITCODE at
+# whatever the last native command set — and the install path deliberately runs
+# `intenter daemon status`, which returns non-zero on a machine that has no
+# daemon yet, which is the normal case on a first install. A caller checking
+# $LASTEXITCODE, which docs/install.md invites, would then read a clean install
+# as a failure.
+exit $ExitOK

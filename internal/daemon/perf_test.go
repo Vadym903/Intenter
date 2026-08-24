@@ -123,7 +123,7 @@ func TestCachedEvaluationIsEffectivelyFree(t *testing.T) {
 	// few hundred microseconds on an idle machine; on a shared CI runner a
 	// single scheduler stall is larger than the entire signal, and it lands in
 	// p95 by definition — one stalled sample in sixty moves p95 and leaves p50
-	// alone. A strict p95 comparison there reports the runner's neighbours, not
+	// alone. A strict p95 comparison there reports the runner's neighbors, not
 	// this code, and has failed a tagged release on 1.8ms versus 3.8ms.
 	//
 	// The defect still caught is the one worth catching: a cache that does not
