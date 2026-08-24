@@ -261,18 +261,17 @@ enable`.
 ### Pin a version
 
 Pass the version explicitly. This is the form to use in a Dockerfile, a
-provisioning script, or anywhere a surprise upgrade would be unwelcome — and
-the only way to install a release candidate, because `latest` resolves to
-final releases only. Right now the published version is the candidate
-`0.1.0-rc.1` (a pre-release; the final `0.1.0` follows the maintainer's
-validation):
+provisioning script, or anywhere a surprise upgrade would be unwelcome — and the
+only way to install a release candidate, because `latest` resolves to final
+releases only. The [releases page](https://github.com/Vadym903/Intenter/releases)
+lists what is published:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --version 0.1.0-rc.1
+curl -fsSL https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --version 0.2.0
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Version 0.1.0-rc.1
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Version 0.2.0
 ```
 
 Downgrading works the same way — pass an older version. Approvals are forward

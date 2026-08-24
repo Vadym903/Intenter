@@ -12,15 +12,13 @@ protocol may change between minor versions; each such change is listed here.
 
 Nothing yet.
 
-## [0.1.0-rc.1]
+## [0.2.0]
 
-Release candidate for the hands-on validation; the notes are under [0.1.0]
-below. Installable with `--version 0.1.0-rc.1` (macOS/Linux) or
-`-Version 0.1.0-rc.1` (Windows); `latest` resolves only to final releases.
+First published release. Earlier tags exist in the repository — `v0.1.0` and its
+candidate — but neither produced a published release, so nothing before this
+version was ever installable.
 
-## [0.1.0]
-
-First published release. The prototype was developed under the name AgentGuard; the rename to Intenter is the first entry under *Changed*.
+The prototype was developed under the name AgentGuard; the rename to Intenter is the first entry under *Changed*.
 It is a semantic runtime permission layer for AI coding agents: it remembers
 what a command *does*, not what it is called, so an approval stops applying the
 moment the underlying behavior changes.
@@ -223,6 +221,5 @@ moment the underlying behavior changes.
   extraction, and the no-verifier notice no longer fails in a console-less
   host.
 
-[Unreleased]: https://github.com/Vadym903/Intenter/compare/v0.1.0-rc.1...HEAD
-[0.1.0-rc.1]: https://github.com/Vadym903/Intenter/releases/tag/v0.1.0-rc.1
-[0.1.0]: https://github.com/Vadym903/Intenter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Vadym903/Intenter/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Vadym903/Intenter/releases/tag/v0.2.0

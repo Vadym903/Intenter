@@ -265,20 +265,17 @@ intenter 0.1.0
 If the command is not found, the `PATH` entry has not reached this shell yet
 ([troubleshooting](docs/troubleshooting.md#intenter-command-not-found)).
 
-<!-- example -->
-<!-- release-candidate note: remove this block at the final tag (docs/release-process.md, "Cutting the first release") -->
-**Release candidates.** The first release goes out as a candidate, `v0.1.0-rc.1`,
-so the pipeline runs once before anything becomes the default download. A
-pre-release never resolves as `latest`, so install it by version — check the
-[releases page](https://github.com/Vadym903/Intenter/releases) for what is
-currently published:
+**Pinning a version.** The one-liners install the newest release. To install a
+specific one — in a Dockerfile, a provisioning script, or anywhere a surprise
+upgrade would be unwelcome — pass it explicitly:
 
+<!-- example -->
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --version 0.1.0-rc.1
+curl -fsSL https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --version 0.2.0
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Version 0.1.0-rc.1
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Version 0.2.0
 ```
 <!-- /example -->
 
@@ -520,17 +517,14 @@ verifies; a terminal update check that asks first; and `history`, `summary`,
 `status` and `doctor` tooling that explains every decision and diagnoses an
 installation.
 
-<!-- example -->
-<!-- release-status paragraph: update from the validation record at the final tag (docs/release-process.md, "Cutting the first release") -->
-**Release status:** the first release goes out as `v0.1.0-rc.1`, a candidate. The
-automated suite runs on macOS, Linux and Windows in CI, and the release pipeline
-installs every candidate with the real installers on all three before publishing
-it. The hands-on walkthrough — a person running the demo against a real Claude
-Code session — is the maintainer's step before the first stable tag and is
-recorded in the [validation record](docs/validation-2026-08-19.md); no platform
-is claimed as validated by hand until that record says so. The Homebrew and
-winget channels open with the stable release.
-<!-- /example -->
+**Release status:** the automated suite runs on macOS, Linux and Windows in CI,
+and the release pipeline installs every build with the real installers on all
+three before publishing it. The hands-on walkthrough — a person running the demo
+against a real Claude Code session — is recorded in the
+[validation record](docs/validation-2026-08-19.md); no platform is claimed as
+validated by hand until that record says so. The Homebrew and winget channels
+are not open yet; winget becomes available once the manifest is accepted
+upstream.
 
 **Prototype status, stated plainly:** Claude Code is the only agent integrated,
 shell tools are the only tools gated, and the approval database schema may change
