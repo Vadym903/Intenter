@@ -204,7 +204,10 @@ jobs:
         if: steps.release.outputs.available == 'true' && env.VERSION != ''
         shell: bash
         run: |
-          export PATH="$HOME/.local/bin:$LOCALAPPDATA/Intenter/bin:$PATH"
+          # $LOCALAPPDATA is a C:\ path; the drive colon splits PATH in bash,
+          # so it has to be converted before it can be an entry.
+          [ -z "$LOCALAPPDATA" ] || PATH="$(cygpath -u "$LOCALAPPDATA")/Intenter/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           expected="${VERSION#v}"
           got="$(intenter version | head -n 1 | cut -d' ' -f2)"
           [ "$got" = "$expected" ] || { echo "::error::installed $got, expected $expected"; exit 1; }
@@ -216,7 +219,8 @@ jobs:
         if: steps.release.outputs.available == 'true' && env.VERSION != ''
         shell: bash
         run: |
-          export PATH="$HOME/.local/bin:$LOCALAPPDATA/Intenter/bin:$PATH"
+          [ -z "$LOCALAPPDATA" ] || PATH="$(cygpath -u "$LOCALAPPDATA")/Intenter/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           intenter update --check --json > check.json || {
             echo "::error::update --check failed"; cat check.json; exit 1; }
           grep -q '"latest"' check.json || {
@@ -256,8 +260,9 @@ jobs:
         shell: bash
         run: |
           if [ "$MODE" = "remote" ]; then
-            sh -c "$POSIX_ONELINER" -s -- --uninstall || curl -fsSL \
-              https://raw.githubusercontent.com/Vadym903/Intenter/main/install.sh | sh -s -- --uninstall
+            # The one-liner ends in "| sh", which swallows arguments passed
+            # after -c; re-plumb it so --uninstall reaches the script.
+            sh -c "${POSIX_ONELINER% | sh} | sh -s -- --uninstall"
           else
             sh install.sh --uninstall
           fi
