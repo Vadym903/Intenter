@@ -71,7 +71,10 @@ brews:
 
       After `brew upgrade`, run `intenter doctor`; it will tell you if the
       daemon still needs restarting into the new binary.
-    skip_upload: auto
+    # The tap repository does not exist yet; pushing to it fails the whole
+    # publish after the release assets are already up. Flip back to `auto`
+    # once Vadym903/homebrew-tap exists and HOMEBREW_TAP_GITHUB_TOKEN is set.
+    skip_upload: true
 
 winget:
   - name: intenter
@@ -104,10 +107,12 @@ winget:
           owner: microsoft
           name: winget-pkgs
           branch: master
-    # Until the package is accepted upstream there is nowhere to push, so the
-    # manifest is attached to the release instead and can be installed with
-    # `winget install --manifest`.
-    skip_upload: auto
+    # Until the package is accepted upstream there is nowhere to push — the
+    # Vadym903/winget-pkgs fork does not exist yet either — so the manifest is
+    # kept in the artifacts and can be installed with `winget install
+    # --manifest`. Flip back to `auto` once the fork and WINGET_GITHUB_TOKEN
+    # exist.
+    skip_upload: true
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"

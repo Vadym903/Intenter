@@ -343,8 +343,8 @@ checksums.txt.sig
 macOS and Linux:
 
 ```sh
-base=https://github.com/Vadym903/Intenter/releases/download/v0.1.0
-curl -fsSLO "$base/intenter_0.1.0_linux_amd64.tar.gz"
+base=https://github.com/Vadym903/Intenter/releases/download/v0.2.0
+curl -fsSLO "$base/intenter_0.2.0_linux_amd64.tar.gz"
 curl -fsSLO "$base/checksums.txt"
 curl -fsSLO "$base/checksums.txt.sig"
 curl -fsSLO https://raw.githubusercontent.com/Vadym903/Intenter/main/cosign.pub
@@ -359,7 +359,7 @@ cosign verify-blob --key cosign.pub --signature checksums.txt.sig --insecure-ign
 
 # Checksum, then install:
 sha256sum --ignore-missing -c checksums.txt
-tar -xzf intenter_0.1.0_linux_amd64.tar.gz
+tar -xzf intenter_0.2.0_linux_amd64.tar.gz
 install -m 0755 intenter ~/.local/bin/intenter
 ```
 
@@ -369,8 +369,8 @@ step.
 Windows:
 
 ```powershell
-$base = 'https://github.com/Vadym903/Intenter/releases/download/v0.1.0'
-Invoke-WebRequest -Uri "$base/intenter_0.1.0_windows_amd64.zip" -OutFile intenter.zip
+$base = 'https://github.com/Vadym903/Intenter/releases/download/v0.2.0'
+Invoke-WebRequest -Uri "$base/intenter_0.2.0_windows_amd64.zip" -OutFile intenter.zip
 Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile checksums.txt
 Invoke-WebRequest -Uri "$base/checksums.txt.sig" -OutFile checksums.txt.sig
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/Vadym903/Intenter/main/cosign.pub -OutFile cosign.pub
