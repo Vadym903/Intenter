@@ -97,6 +97,10 @@ func compile(version string) (string, error) {
 	ldflags := "-X github.com/Vadym903/Intenter/internal/version.Version=" + version
 	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", out, "./cmd/intenter")
 	cmd.Dir = repoRoot()
+	if arch := osArch(); arch != runtime.GOARCH {
+		// The asset is named for the OS architecture; build the binary to match.
+		cmd.Env = append(os.Environ(), "GOARCH="+arch)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -225,11 +229,32 @@ func (r *release) removeSignature(t *testing.T) {
 
 // assetName is the archive name for the running platform.
 func assetName(version string) string {
-	name := fmt.Sprintf("intenter_%s_%s_%s", version, runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("intenter_%s_%s_%s", version, runtime.GOOS, osArch())
 	if runtime.GOOS == "windows" {
 		return name + ".zip"
 	}
 	return name + ".tar.gz"
+}
+
+// osArch is the architecture the installer will request: the OS's, not the Go
+// toolchain's. install.ps1 asks for the asset matching OSArchitecture, so a
+// 32-bit toolchain on 64-bit Windows must still serve the amd64 asset.
+// Mirrors Get-Architecture in install.ps1.
+func osArch() string {
+	if runtime.GOOS != "windows" {
+		return runtime.GOARCH
+	}
+	arch := os.Getenv("PROCESSOR_ARCHITEW6432") // set when running under WOW64
+	if arch == "" {
+		arch = os.Getenv("PROCESSOR_ARCHITECTURE")
+	}
+	switch strings.ToUpper(arch) {
+	case "AMD64":
+		return "amd64"
+	case "ARM64":
+		return "arm64"
+	}
+	return runtime.GOARCH
 }
 
 func writeTarGz(t *testing.T, path, binary string) {

@@ -935,7 +935,7 @@ if ($Uninstall) {
 
 # Success is stated, not implied. Every failure path above exits with its own
 # documented code; falling off the end instead would leave $LASTEXITCODE at
-# whatever the last native command set — and the install path deliberately runs
+# whatever the last native command set - and the install path deliberately runs
 # `intenter daemon status`, which returns non-zero on a machine that has no
 # daemon yet, which is the normal case on a first install. A caller checking
 # $LASTEXITCODE, which docs/install.md invites, would then read a clean install
