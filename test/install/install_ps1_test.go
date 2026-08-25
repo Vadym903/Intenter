@@ -57,6 +57,35 @@ func eachShell(t *testing.T, run func(t *testing.T, interpreter string)) {
 	}
 }
 
+// TestInstallPs1ScriptblockFormRunsUnderStrictMode pins the documented
+// `& ([scriptblock]::Create((irm ...))) -Uninstall` form. Parameters bind into
+// a scriptblock-local scope there, so every `$script:X` read used to fault
+// under StrictMode ("The variable '$script:Version' cannot be retrieved") and
+// the post-publish uninstall gate exited 1 on every release.
+func TestInstallPs1ScriptblockFormRunsUnderStrictMode(t *testing.T) {
+	eachShell(t, func(t *testing.T, shell string) {
+		env := newEnv(t, newRelease(t, fakeLatest))
+		// A binary must be present: without one the uninstall takes the
+		// "nothing to remove" branch, which is not guarded by -DryRun.
+		if err := os.MkdirAll(env.InstallDir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(env.installedBinary(), []byte("stub"), 0o755); err != nil {
+			t.Fatalf("write stub: %v", err)
+		}
+
+		command := "& ([scriptblock]::Create((Get-Content -Raw '" +
+			filepath.Join(repoRoot(), "install.ps1") + "'))) -Uninstall -DryRun"
+		got := env.runWith(shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
+		if got.ExitCode != 0 {
+			t.Fatalf("exit code = %d\n%s", got.ExitCode, got.Output())
+		}
+		if !strings.Contains(got.Output(), "Would remove") {
+			t.Errorf("no dry-run plan in the output:\n%s", got.Output())
+		}
+	})
+}
+
 func TestInstallPs1InstallsAndExplainsWhatItDid(t *testing.T) {
 	eachShell(t, func(t *testing.T, shell string) {
 		env := newEnv(t, newRelease(t, fakeLatest))

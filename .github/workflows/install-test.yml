@@ -275,7 +275,11 @@ jobs:
         shell: pwsh
         run: |
           if ($env:MODE -eq 'remote') {
-            & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Uninstall
+            # In a child shell: install.ps1 ends with an explicit `exit`, which
+            # in a scriptblock would take this step's process with it and skip
+            # the assertions below.
+            pwsh -NoProfile -Command '& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Vadym903/Intenter/main/install.ps1))) -Uninstall'
+            if ($LASTEXITCODE -ne 0) { throw "uninstall exited $LASTEXITCODE" }
           } else {
             ./install.ps1 -Uninstall
           }

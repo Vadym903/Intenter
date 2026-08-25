@@ -58,6 +58,18 @@ $ErrorActionPreference = 'Stop'
 # download is reported in one line instead.
 $ProgressPreference = 'SilentlyContinue'
 
+# The functions below read these through $script:. Run as a file, parameters
+# already live in the script scope and these lines change nothing; run through
+# the documented scriptblock form (`& ([scriptblock]::Create((irm ...)))
+# -Uninstall`), parameters are local to the scriptblock and $script: points at
+# the caller's scope, where StrictMode would fault on the very first read.
+$script:Version = $Version
+$script:InstallDir = $InstallDir
+$script:NoModifyPath = [bool]$NoModifyPath
+$script:Setup = $Setup
+$script:Purge = [bool]$Purge
+$script:DryRun = [bool]$DryRun
+
 # Distribution constants. These strings are identical in install.sh and in the
 # README install section, so a repository move is a single search and replace.
 $Repo = if ($env:INTENTER_REPO) { $env:INTENTER_REPO } else { 'Vadym903/Intenter' }
