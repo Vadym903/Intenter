@@ -241,10 +241,22 @@ func (s *StartupCheck) allCandidates() []target {
 	}
 	out = append(out, target{
 		shell:      ShellFish,
-		path:       filepath.Join(s.Home, ".config", "fish", "conf.d", fishBlockFile),
+		path:       filepath.Join(s.fishConfigDir(), "conf.d", fishBlockFile),
 		standalone: true,
 	})
 	return out
+}
+
+// fishConfigDir is where fish actually looks for conf.d drop-ins:
+// $XDG_CONFIG_HOME/fish when the variable is set — fish honors it on every
+// platform, and CI runners export it — otherwise ~/.config/fish. Writing to
+// ~/.config on a machine where XDG_CONFIG_HOME points elsewhere would install
+// a file fish never reads.
+func (s *StartupCheck) fishConfigDir() string {
+	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+		return filepath.Join(base, "fish")
+	}
+	return filepath.Join(s.Home, ".config", "fish")
 }
 
 // powerShellTargets are the profiles the two Windows hosts read. Both are
@@ -289,7 +301,7 @@ func (s *StartupCheck) detectShells() []string {
 		for shell, evidence := range map[string]string{
 			ShellZsh:  filepath.Join(s.Home, ".zshrc"),
 			ShellBash: filepath.Join(s.Home, ".bashrc"),
-			ShellFish: filepath.Join(s.Home, ".config", "fish"),
+			ShellFish: s.fishConfigDir(),
 		} {
 			if _, err := os.Stat(evidence); err == nil {
 				found[shell] = true

@@ -25,7 +25,7 @@ func (s *StartupCheck) legacyCandidates() []target {
 	out := make([]target, 0, len(candidates))
 	for _, c := range candidates {
 		if c.shell == ShellFish {
-			c.path = filepath.Join(s.Home, ".config", "fish", "conf.d", legacyFishBlockFile)
+			c.path = filepath.Join(s.fishConfigDir(), "conf.d", legacyFishBlockFile)
 		}
 		out = append(out, c)
 	}

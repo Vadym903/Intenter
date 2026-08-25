@@ -136,6 +136,9 @@ func (e *Env) environ() []string {
 		"INTENTER_RUNTIME_DIR="+e.RuntimeDir,
 		"INTENTER_ENDPOINT=",
 		"HOME="+e.Home,
+		// CI runners export XDG_CONFIG_HOME pointing at the real home; fish
+		// follows it, so it must follow HOME into the fixture too.
+		"XDG_CONFIG_HOME="+filepath.Join(e.Home, ".config"),
 		"CLAUDE_PROJECT_DIR="+e.Workspace,
 	)
 	// Later entries win, so an override replaces whatever was inherited.

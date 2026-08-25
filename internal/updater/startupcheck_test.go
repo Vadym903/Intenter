@@ -11,6 +11,9 @@ import (
 // startupCheckFor builds a check against a fake home, on a chosen platform.
 func startupCheckFor(t *testing.T, goos string) (*StartupCheck, *Store, string) {
 	t.Helper()
+	// The fish paths honor XDG_CONFIG_HOME; a value inherited from the
+	// machine running the tests would point outside the fake home.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	store := NewStore(t.TempDir())
 	return &StartupCheck{
@@ -405,6 +408,30 @@ func TestShellDetectionUsesWhatIsOnTheMachine(t *testing.T) {
 		if !contains(got, want) {
 			t.Errorf("shells = %v, missing %s", got, want)
 		}
+	}
+}
+
+func TestFishFileFollowsXDGConfigHome(t *testing.T) {
+	// fish reads $XDG_CONFIG_HOME/fish when the variable is set — CI runners
+	// export it — so that is where the drop-in must be written, or fish will
+	// never see it.
+	check, _, _ := startupCheckFor(t, "linux")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	if _, err := check.Install([]string{ShellFish}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	dropIn := filepath.Join(config, "fish", "conf.d", fishBlockFile)
+	if _, err := os.Stat(dropIn); err != nil {
+		t.Fatalf("drop-in is not where fish looks: %v", err)
+	}
+
+	if _, err := check.Remove(); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(dropIn); !os.IsNotExist(err) {
+		t.Errorf("drop-in still present after Remove: %v", err)
 	}
 }
 

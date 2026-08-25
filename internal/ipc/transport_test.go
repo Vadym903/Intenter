@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -156,6 +157,63 @@ func TestCloseReleasesTheEndpoint(t *testing.T) {
 		t.Fatalf("re-Listen: %v", err)
 	}
 	again.Close()
+}
+
+// TestCloseReturnsDuringDialStorm pins the go-winio workaround in
+// pipeListener.Close: a client that connects and instantly disconnects while
+// Close races an in-flight Accept can swallow winio's one close signal and
+// leave Close blocked forever — the claude adapter suite hit this as a
+// 30-minute CI hang. The storm makes that race likely; the deadline turns a
+// hang into a failure instead of a package timeout. On unix the storm just
+// exercises an uncontroversial Close.
+func TestCloseReturnsDuringDialStorm(t *testing.T) {
+	for round := range 10 {
+		listener, err := Listen(testEndpoint(t))
+		if err != nil {
+			t.Fatalf("round %d: Listen: %v", round, err)
+		}
+
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				conn.Close()
+			}
+		}()
+
+		stormCtx, stopStorm := context.WithCancel(context.Background())
+		var storm sync.WaitGroup
+		for range 4 {
+			storm.Add(1)
+			go func() {
+				defer storm.Done()
+				for stormCtx.Err() == nil {
+					dialCtx, cancel := context.WithTimeout(stormCtx, time.Second)
+					if conn, err := Dial(dialCtx, listener.Endpoint()); err == nil {
+						conn.Close()
+					}
+					cancel()
+				}
+			}()
+		}
+
+		time.Sleep(10 * time.Millisecond) // let the storm reach the listener
+		closed := make(chan error, 1)
+		go func() { closed <- listener.Close() }()
+		select {
+		case err := <-closed:
+			if err != nil {
+				t.Fatalf("round %d: Close: %v", round, err)
+			}
+		case <-time.After(30 * time.Second):
+			stopStorm()
+			t.Fatalf("round %d: Close did not return: the winio close race is back", round)
+		}
+		stopStorm()
+		storm.Wait()
+	}
 }
 
 func TestConcurrentConnections(t *testing.T) {

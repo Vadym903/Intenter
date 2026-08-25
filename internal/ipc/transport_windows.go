@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os/user"
+	"time"
 
 	"github.com/Microsoft/go-winio"
 )
@@ -55,7 +56,28 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 	return l.inner.Accept()
 }
 
-func (l *pipeListener) Close() error { return l.inner.Close() }
+// Close works around a go-winio deadlock (present through v0.6.2 and main as
+// of Jan 2026): when Close races with an in-flight Accept whose client
+// connected and instantly disconnected, the listener goroutine consumes the
+// one close signal but sees ERROR_NO_DATA instead of its closed marker, keeps
+// running, and winio's Close blocks on its done channel forever. Every resting
+// state of that goroutine still honors a fresh close signal, so if Close has
+// not returned after a grace period, sending another one — which is exactly
+// what a repeated winio Close does — unwedges it.
+func (l *pipeListener) Close() error {
+	done := make(chan error, 1)
+	go func() { done <- l.inner.Close() }()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(100 * time.Millisecond):
+			// Once the listener really is closed, this extra Close returns
+			// via winio's done channel, so no goroutine outlives the retry.
+			go func() { _ = l.inner.Close() }()
+		}
+	}
+}
 
 func (l *pipeListener) Endpoint() string { return l.endpoint }
 
