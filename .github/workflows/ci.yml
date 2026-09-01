@@ -45,11 +45,16 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # `verify` runs `golangci-lint config verify` first, which downloads the
+      # config's JSON schema from golangci-lint.run on every run and fails the
+      # job when that host does not answer. The config is checked by the lint
+      # run itself, so the extra network round-trip buys nothing but flakiness.
       - name: Lint
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.61.0
+          verify: false
 
       # The race detector's runtime is C. On Linux the Go tool refuses -race
       # without cgo, so that one step enables it; on macOS -race has worked
