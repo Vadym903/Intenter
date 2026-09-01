@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -67,12 +68,19 @@ func MissingHookEvents(settingsPath string) ([]string, error) {
 // INVARIANT I-9: the file is never modified without a backup first, because
 // everything else in it belongs to the user.
 func BackupSettings(settingsPath, dataDir string, now time.Time) (string, error) {
-	content, err := os.ReadFile(settingsPath)
+	return backupFile(settingsPath, dataDir, "claude-settings", ".json", now)
+}
+
+// backupFile copies one file Intenter is about to change, keeping the most
+// recent MaxBackups of that prefix. A file that is not there needs no backup
+// and is not an error.
+func backupFile(sourcePath, dataDir, prefix, extension string, now time.Time) (string, error) {
+	content, err := os.ReadFile(sourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
-		return "", fmt.Errorf("claude: read %s: %w", settingsPath, err)
+		return "", fmt.Errorf("claude: read %s: %w", sourcePath, err)
 	}
 
 	backupDir := filepath.Join(dataDir, "backups")
@@ -80,26 +88,26 @@ func BackupSettings(settingsPath, dataDir string, now time.Time) (string, error)
 		return "", fmt.Errorf("claude: create the backup directory: %w", err)
 	}
 
-	name := fmt.Sprintf("claude-settings-%s.json", now.UTC().Format("20060102T150405Z"))
+	name := fmt.Sprintf("%s-%s%s", prefix, now.UTC().Format("20060102T150405Z"), extension)
 	path := filepath.Join(backupDir, name)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return "", fmt.Errorf("claude: write %s: %w", path, err)
 	}
 
-	pruneBackups(backupDir)
+	pruneBackups(backupDir, prefix+"-")
 	return path, nil
 }
 
 // pruneBackups keeps the most recent backups and removes the rest. A failure
 // here is not worth failing setup over: the backup that matters was written.
-func pruneBackups(backupDir string) {
+func pruneBackups(backupDir, prefix string) {
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
 		return
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "claude-settings-") {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
 			names = append(names, entry.Name())
 		}
 	}
@@ -111,6 +119,74 @@ func pruneBackups(backupDir string) {
 	for _, name := range names[:len(names)-MaxBackups] {
 		_ = os.Remove(filepath.Join(backupDir, name))
 	}
+}
+
+// RuleRemoval reports what taking one allow rule out of a settings file did.
+type RuleRemoval struct {
+	Path string
+	Rule string
+	// Removed is false when the rule was not in the file after all.
+	Removed bool
+	// BackupPath is the copy taken before the write.
+	BackupPath string
+}
+
+// RemoveAllowRule takes one rule out of `permissions.allow`.
+//
+// Revoking an Intenter approval on its own does not stop a command that a rule
+// like this still allows: a command with no matching approval is deferred to
+// Claude, which then permits it silently. So a removal that means anything has
+// to reach this file too.
+//
+// The rule text is matched against the file as it is now, not as it was when it
+// was listed. A stale identifier removes nothing rather than the wrong thing.
+// Every other key in the file is preserved, and INVARIANT I-9 still holds: the
+// backup is written before the file is.
+func RemoveAllowRule(settingsPath, dataDir, raw string, now time.Time) (RuleRemoval, error) {
+	removal := RuleRemoval{Path: settingsPath, Rule: raw}
+
+	if settingsPath == managedSettingsPath(runtime.GOOS) {
+		return removal, fmt.Errorf(
+			"claude: %s is an administrator's managed policy file, which Intenter never edits", settingsPath)
+	}
+
+	tree, err := readSettingsTree(settingsPath)
+	if err != nil {
+		return removal, err
+	}
+	permissions, ok := tree["permissions"].(map[string]any)
+	if !ok {
+		return removal, nil
+	}
+	allow, ok := permissions["allow"].([]any)
+	if !ok {
+		return removal, nil
+	}
+
+	kept := make([]any, 0, len(allow))
+	for _, entry := range allow {
+		if text, isString := entry.(string); isString && strings.TrimSpace(text) == strings.TrimSpace(raw) {
+			removal.Removed = true
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	if !removal.Removed {
+		return removal, nil
+	}
+
+	backup, err := BackupSettings(settingsPath, dataDir, now)
+	if err != nil {
+		return removal, err
+	}
+	removal.BackupPath = backup
+
+	permissions["allow"] = kept
+	tree["permissions"] = permissions
+	if err := writeSettingsTree(settingsPath, tree); err != nil {
+		return removal, err
+	}
+	return removal, nil
 }
 
 // HookCommand is the command line a hook entry runs.

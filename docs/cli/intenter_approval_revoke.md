@@ -2,13 +2,42 @@
 
 # intenter approval revoke
 
-Permanently stop an approval from matching
+Permanently stop a permission from matching
+
+Takes a permission away for good. Give the numeric id of an approval, or the
+key of a rule Claude holds (the ID column of `intenter approvals` names both).
+
+Because a rule in Claude's own settings allows a command whether or not
+Intenter imported it, revoking an approval also removes the rules that grant
+the same command — otherwise the command would keep running without a prompt
+and the revoke would have changed nothing that matters. Every file that would
+change is named first, nothing is written without your confirmation, and each
+one is backed up. Rules in a managed policy file, or shared through the
+repository, are never edited; they are named instead.
+
+Nothing is deleted: a revoked approval stays in the history, and the settings
+backup holds the rule that was removed.
 
 ## Usage
 
 ```text
-intenter approval revoke <id>
+intenter approval revoke <id | rule-key> [flags]
 ```
+
+## Examples
+
+```console
+intenter approval revoke 3
+intenter approval revoke 3 --keep-agent-rules
+intenter approval revoke "local:Bash(npm run cleanup)"
+```
+
+## Options
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--keep-agent-rules` | — | revoke only Intenter's approval, leaving Claude's own rules in place |
+| `--yes` | — | do not ask for confirmation; the plan is still printed |
 
 ## Options inherited from parent commands
 

@@ -12,9 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Vadym903/Intenter/internal/adapter/claude"
 	"github.com/Vadym903/Intenter/internal/config"
 	"github.com/Vadym903/Intenter/internal/ipc"
 	"github.com/Vadym903/Intenter/internal/platform"
+	"github.com/Vadym903/Intenter/internal/storage"
 	"github.com/Vadym903/Intenter/internal/updater"
 	"github.com/Vadym903/Intenter/internal/version"
 )
@@ -546,10 +548,32 @@ func applyPlan(ctx context.Context, app *App, applier *updater.Applier, plan upd
 	}
 	app.Printf("Updated in %.0fs\n", time.Since(started).Seconds())
 
-	if check := checkInstalledPaths(app, readMeta(ctx, app)); !check.OK {
+	meta := readMeta(ctx, app)
+	if check := checkInstalledPaths(app, meta); !check.OK {
 		app.Warnf("\n! %s\n  → %s\n", check.Detail, check.Fix)
 	}
+	warnMissingSkill(app, meta)
 	return nil
+}
+
+// warnMissingSkill says when an installation has no `/intenter` command, which
+// is what an upgrade from a version before it existed leaves behind.
+//
+// Only the file's absence is checked, never its content: this runs in the
+// binary being replaced, so it holds the *previous* menu and is in no position
+// to judge whether the installed one is current. `intenter doctor` runs as the
+// new binary and does that part.
+func warnMissingSkill(app *App, meta map[string]string) {
+	if meta[storage.MetaClaudeSettingsPath] == "" {
+		// Intenter is not set up for Claude Code, so there is nothing to miss.
+		return
+	}
+	path := claude.SkillPath(claudeConfigDir(app, meta))
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	app.Warnf("\n! `/intenter` is not installed for Claude Code.\n")
+	app.Warnf("  → run `intenter setup claude` to add it\n")
 }
 
 // applier builds the updater with the CLI's own daemon restart wired in.

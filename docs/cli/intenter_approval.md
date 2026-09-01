@@ -28,7 +28,7 @@ intenter approval revoke 3
 |---|---|
 | [`intenter approval disable`](intenter_approval_disable.md) | Temporarily stop an approval from matching |
 | [`intenter approval enable`](intenter_approval_enable.md) | Let a disabled approval match again |
-| [`intenter approval revoke`](intenter_approval_revoke.md) | Permanently stop an approval from matching |
+| [`intenter approval revoke`](intenter_approval_revoke.md) | Permanently stop a permission from matching |
 | [`intenter approval show`](intenter_approval_show.md) | Show everything one approval covers |
 
 ## Options inherited from parent commands

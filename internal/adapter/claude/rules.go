@@ -71,6 +71,69 @@ func AllowRules(files []SettingsFile, tool string) []Rule {
 	return rules
 }
 
+// ProjectRule is one allow rule the agent holds, together with the file it
+// lives in and whether this user can change it here.
+//
+// A rule like this lets a command run without a prompt whether or not Intenter
+// ever imported it, so anything that reports what a project trusts has to
+// include them or it is under-reporting.
+type ProjectRule struct {
+	Rule
+	// Path is the settings file the rule was read from.
+	Path string
+	// Changeable reports whether Intenter may edit that file on this user's
+	// behalf.
+	Changeable bool
+	// Reason says why it may not, when it may not.
+	Reason string
+}
+
+// ProjectRules lists the allow rules for one tool that apply to a project
+// directory, and the files whose rules could not be read.
+//
+// An unreadable file is reported rather than skipped: "this project has no
+// rules" and "we could not tell what rules this project has" are different
+// answers, and only one of them is safe to show as a complete list.
+func ProjectRules(reader *SettingsReader, projectDir, tool string) (rules []ProjectRule, unreadable []string) {
+	for _, file := range reader.Discover(projectDir) {
+		if file.Unreadable {
+			unreadable = append(unreadable, file.Path)
+			continue
+		}
+		for _, raw := range file.Permissions.Allow {
+			rule, ok := ParseRule(file.Scope, raw)
+			if !ok || rule.Tool != tool {
+				continue
+			}
+			changeable, reason := ruleChangeable(file.Scope)
+			rules = append(rules, ProjectRule{
+				Rule:       rule,
+				Path:       file.Path,
+				Changeable: changeable,
+				Reason:     reason,
+			})
+		}
+	}
+	return rules, unreadable
+}
+
+// ruleChangeable decides whether Intenter may take a rule out of a file.
+//
+// Managed settings are an administrator's policy and are never edited. A
+// project file is normally shared through the repository, so removing a rule
+// from it changes what everyone on the team is allowed to do; that needs the
+// user to name the file, not a default.
+func ruleChangeable(scope Scope) (bool, string) {
+	switch scope {
+	case ScopeManaged:
+		return false, "an administrator's managed policy file, which Intenter never edits"
+	case ScopeProject:
+		return false, "shared through the repository, so removing it would change what everyone is allowed to do"
+	default:
+		return true, ""
+	}
+}
+
 // Consent reports the persistent permission Claude already holds for a raw
 // command, or nil when Intenter cannot be certain it does (§11.6).
 //

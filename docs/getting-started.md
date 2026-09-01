@@ -360,6 +360,50 @@ they were never going to prompt.
 If something looks wrong, `intenter doctor` checks the installation and prints
 a fix for each problem it finds.
 
+## 7a. From inside the session: `/intenter`
+
+Everything above happens in a terminal, but the moment a permission matters is
+the moment the agent asks for one — and that happens inside Claude Code. Setup
+installs a command for exactly that. Type `/intenter` in a session:
+
+```text
+Intenter — /tmp/ag-demo
+
+Allowed without asking
+ID  ACTION                TRUSTED                          ORIGIN
+1   RUN_SCRIPT>FS_DELETE  DELETE(force,recursive) ./dist   cli
+
+What you can do
+  /intenter allowed
+      What this project can run without a prompt — both Intenter's approvals
+      and Claude's own rules.
+      e.g. intenter approvals
+  /intenter recent
+      The same list, newest first, so a permission granted minutes ago is at
+      the top.
+      e.g. intenter approvals --recent
+  /intenter remove <id>
+      Stop trusting one permission for good, and remove the agent rule that
+      grants the same command.
+      e.g. intenter approval revoke 3
+      changes a permission — permanent, and it asks before it changes anything
+      you will be shown what changes, and asked, before anything does
+  …
+```
+
+Each entry says what it does and shows a command you can run in a terminal
+instead — the menu is a front door, never a capability you can only reach
+through the agent.
+
+`/intenter remove 3` is worth knowing about before you need it. Answering
+"Yes, and don't ask again" writes a rule into Claude's own settings, and that
+rule allows the command whether or not Intenter ever imported it. So removing a
+permission removes both: Intenter's approval **and** the rule behind it. You are
+shown exactly which file changes, asked, and the file is backed up first. If the
+rule lives somewhere you cannot change here — a managed policy, or settings
+shared through the repository — nothing is written and you are told the command
+still runs.
+
 ## 8. Clean up
 
 Remove the demo project, and — if you were only trying Intenter out — the

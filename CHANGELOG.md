@@ -10,7 +10,64 @@ protocol may change between minor versions; each such change is listed here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`/intenter` inside the agent session.** `intenter setup claude` now installs
+  a Claude Code skill at `~/.claude/skills/intenter/SKILL.md`. Typing
+  `/intenter` shows what this project can run without a prompt and what you can
+  do about it, without leaving the session; `/intenter allowed`,
+  `/intenter recent`, `/intenter remove <id>` and `/intenter pause <id>` run one
+  action directly. `intenter uninstall claude` removes it again.
+- **`intenter doctor` checks the `/intenter` command**, and reports it missing
+  or out of date with the command that fixes it. Nothing rewrites the file on
+  its own — `intenter setup claude` owns it — so after upgrading from a version
+  that predates it, `intenter update` says it is not installed.
+- **`intenter menu`.** The command behind that skill, and a terminal command in
+  its own right. It always exits 0: a failing command injected into a skill
+  aborts the whole invocation, so an unreachable daemon has to be part of the
+  output rather than an error status.
+
+### Fixed
+
+- **Intenter can now be installed when Claude Code is the VS Code extension.**
+  The extension bundles its own copy of the CLI and does not add `claude` to
+  `PATH`, so `intenter setup claude` found nothing and stopped on its first
+  step — the integration was simply unavailable to those users. Setup now
+  recognizes the extension directory (VS Code, Insiders, the Remote server
+  halves, Cursor and Windsurf), reports the Claude Code version as unknown, and
+  installs the hooks as usual. Nothing about the hooks ever needed that binary.
+- **`intenter doctor` no longer tells those users to install Claude Code.** It
+  names what it found instead.
+- **Setup says the terminal update check cannot fire in the VS Code panel.** It
+  runs when a shell starts, and the panel is not a shell; it now points at
+  `intenter update --check` instead of reporting a check that will never appear.
+
+### Changed
+
+- **`intenter approvals` now lists the permission rules Claude itself holds**,
+  not only Intenter's own approvals. A rule in `permissions.allow` lets a
+  command run without a prompt whether or not Intenter ever imported it, so a
+  list that omitted them was under-reporting what this project trusts. The
+  `ORIGIN` column tells the two apart and a `CREATED` column was added.
+- **`intenter approval revoke` now removes the agent rule that grants the same
+  command**, after showing the exact change and backing up the settings file.
+  Revoking only Intenter's own record left the command running silently through
+  Claude's rule, which made "revoke" untrue. `--keep-agent-rules` restores the
+  old behavior. Rules in managed or repository-shared settings are never edited;
+  they are named, and the outcome says the command still runs. When the rule is
+  wider than the command — `Bash(npm run *)` rather than `Bash(npm run cleanup)`
+  — the plan says so before you agree, because removing it takes away more than
+  you asked about. `--json` reports what went, what stayed, and whether the
+  command can still run unprompted; it requires `--yes`, since there is nobody
+  to ask.
+
+### Breaking
+
+- **`intenter approvals --json` returns a different array.** Each element now
+  names its source and nests its payload: `{"source": "approval", "approval":
+  {…}}` or `{"source": "agent-rule", "rule": {…}}`. A script that read the
+  previous array of approval objects needs `--source approval`, which returns
+  it untouched.
 
 ## [0.2.0]
 

@@ -4,10 +4,12 @@
 
 List what is trusted in this project
 
-Lists the approvals that apply to the current project directory: what each
-one trusts (the resolved effects, targets and scopes), how often it was used,
-and where it came from (the CLI or an imported Claude rule). Approvals whose
-inputs changed are still listed; they simply stop matching until re-approved.
+Lists everything that lets a command run in the current project without a
+prompt. That is two things: the approvals Intenter holds — what each trusts,
+how often it was used and where it came from — and the permission rules
+Claude itself holds, which allow a command whether or not Intenter ever
+imported them. Approvals whose inputs changed are still listed; they simply
+stop matching until re-approved.
 
 ## Usage
 
@@ -19,8 +21,8 @@ intenter approvals [flags]
 
 ```console
 intenter approvals
-intenter approvals --inactive
-intenter approvals --all --json
+intenter approvals --recent
+intenter approvals --source approval --json
 ```
 
 ## Options
@@ -30,6 +32,8 @@ intenter approvals --all --json
 | `--all` | — | list approvals of every project |
 | `--inactive` | — | include disabled and revoked approvals |
 | `--project` `<string>` | — | list approvals of another project directory |
+| `--recent` | — | newest first, by when the permission was granted |
+| `--source` `<string>` | — | only one source: `approval` or `agent-rule` |
 
 ## Options inherited from parent commands
 

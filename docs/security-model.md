@@ -145,6 +145,37 @@ Everything.
 `intenter history` shows you everything Intenter knows. There is nowhere
 else for it to be.
 
+## What Intenter writes into Claude's own configuration
+
+Intenter is a guest in `~/.claude`. It writes there in exactly three places,
+and each one is bounded.
+
+- **`intenter setup claude`** adds its hook entries to `settings.json` and
+  installs the `/intenter` command at `skills/intenter/SKILL.md`. Hooks you
+  already have are kept, every other key is preserved byte for byte, and
+  `intenter uninstall claude` removes only what Intenter put there.
+- **`intenter approval revoke`** removes a rule from `permissions.allow` — the
+  one write that is not part of setup. It exists because a revoke that skipped
+  it would not be a revoke: a command with no matching approval is handed back
+  to Claude, which then allows it silently through the rule that is still in the
+  file. Removing the approval and leaving the rule would report success and
+  change nothing that matters.
+
+The last one has the tightest constraints, because it is the one that runs while
+you are working rather than during an install:
+
+| | |
+|---|---|
+| Shown first | the exact rule, the exact file, and what still grants the command afterwards |
+| Never unasked | nothing is written until you confirm; with no terminal to ask from, it refuses rather than assuming |
+| Backed up | the file is copied before it is written, and the copy holds the rule that was removed |
+| Matched fresh | the rule is matched against the file as it is now, so a stale identifier removes nothing rather than the wrong thing |
+| Never touched | a managed policy file is an administrator's, and a `.claude/settings.json` shared through your repository is your team's — both are named and left alone |
+| Only ever narrower | the menu can see, pause and remove. Nothing in it can grant or widen a permission |
+
+Every file Intenter modifies in `~/.claude` is backed up first, and the backups
+are kept under Intenter's own data directory.
+
 ## The installer
 
 The one-liners run a script from the internet, which deserves scrutiny. What

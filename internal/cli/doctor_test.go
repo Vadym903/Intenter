@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Vadym903/Intenter/internal/adapter/claude"
 )
 
 // Doctor exists for the moment something is wrong and the user cannot tell
@@ -18,11 +21,37 @@ func TestDoctorReportsEveryCheck(t *testing.T) {
 	for _, want := range []string{
 		"Intenter doctor",
 		"Binary path", "Configuration", "Database", "Daemon",
-		"Service", "Endpoint", "Claude Code", "Hooks", "Pre-rename install", "Settings backup",
+		"Service", "Endpoint", "Claude Code", "Hooks", "Agent command", "Pre-rename install",
+		"Settings backup",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor is missing the %q check:\n%s", want, out)
 		}
+	}
+}
+
+// An upgrade from a version before `/intenter` existed leaves an installation
+// with no command at all. Nothing rewrites it automatically, so doctor is what
+// makes the gap visible — and it has to name the fix, not just the fault.
+func TestDoctorReportsAMissingOrStaleAgentCommand(t *testing.T) {
+	f := startFixture(t)
+
+	out, _, _ := f.inWorkspace(t, "doctor")
+	if !strings.Contains(out, "missing or out of date") {
+		t.Errorf("a missing /intenter must be reported:\n%s", out)
+	}
+	if !strings.Contains(out, "intenter setup claude") {
+		t.Errorf("the report must name the command that fixes it:\n%s", out)
+	}
+
+	// With the file in place and current, the check passes and says where it is.
+	configDir := filepath.Join(f.home, ".claude")
+	if _, err := installSkillForTest(configDir, f.home); err != nil {
+		t.Fatalf("install the skill: %v", err)
+	}
+	out, _, _ = f.inWorkspace(t, "doctor")
+	if !strings.Contains(out, "/intenter at ") {
+		t.Errorf("an installed command must be reported as present:\n%s", out)
 	}
 }
 
@@ -215,4 +244,34 @@ func TestStatusNeedsTheDaemon(t *testing.T) {
 	if !strings.Contains(errOut, "daemon") {
 		t.Errorf("stderr = %q", errOut)
 	}
+}
+
+// Telling a user to install what they already have sends them in a circle.
+// Someone whose Claude Code is the VS Code extension has no `claude` on PATH,
+// and doctor has to name what it found instead of declaring it missing.
+func TestDoctorNamesTheVSCodeExtensionInsteadOfAskingForAnInstall(t *testing.T) {
+	f := startFixture(t)
+	extension := filepath.Join(f.home, ".vscode", "extensions", "anthropic.claude-code-2.1.4")
+	if err := os.MkdirAll(extension, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// This is the whole point of the case: no `claude` to find. The machine
+	// running the tests may well have one, so take it out of reach.
+	t.Setenv("PATH", t.TempDir())
+
+	out, _, _ := f.inWorkspace(t, "doctor")
+	if !strings.Contains(out, "Claude Code") {
+		t.Fatalf("doctor must report the Claude Code check:\n%s", out)
+	}
+	if strings.Contains(out, "install Claude Code") {
+		t.Errorf("doctor told a user with the extension to install Claude Code:\n%s", out)
+	}
+	if !strings.Contains(out, "extension for VS Code") {
+		t.Errorf("doctor must name what it found:\n%s", out)
+	}
+}
+
+// installSkillForTest writes the real `/intenter` command, the way setup does.
+func installSkillForTest(configDir, dataDir string) (claude.SkillInstall, error) {
+	return claude.InstallSkill(configDir, dataDir, SkillActions(), time.Now())
 }

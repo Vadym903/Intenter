@@ -31,6 +31,8 @@ type UninstallResult struct {
 	// StartupCheckFiles are the shell start-up files the update check was
 	// removed from.
 	StartupCheckFiles []string
+	// SkillRemoved is true when the `/intenter` command was there to remove.
+	SkillRemoved bool
 }
 
 // Failed reports whether any step failed.
@@ -68,6 +70,7 @@ func (u *Uninstall) Run(ctx context.Context) (*UninstallResult, error) {
 	steps := []func(context.Context, *UninstallResult) Step{
 		u.backup,
 		u.removeHooks,
+		u.removeSkill,
 		u.removeStartupCheck,
 		u.stopDaemon,
 		u.purge,
@@ -93,6 +96,26 @@ func (u *Uninstall) timed(name string, body func() (string, string, error)) Step
 		Err:      err,
 		Duration: u.now().Sub(started),
 	}
+}
+
+// removeSkill deletes the `/intenter` command from Claude's skills directory.
+//
+// Only Intenter's own directory goes; the user's other skills are none of our
+// business. A leftover `/intenter` that runs a binary the user just removed
+// would fail in every session, from a tool they believe is gone.
+func (u *Uninstall) removeSkill(_ context.Context, result *UninstallResult) Step {
+	return u.timed("Agent command /intenter removed", func() (string, string, error) {
+		configDir := filepath.Dir(u.settingsPath())
+		removed, err := RemoveSkill(configDir)
+		if err != nil {
+			return "", "", err
+		}
+		result.SkillRemoved = removed
+		if !removed {
+			return "none installed", "", nil
+		}
+		return SkillDir(configDir), "", nil
+	})
 }
 
 // removeStartupCheck takes the managed block back out of the shell start-up

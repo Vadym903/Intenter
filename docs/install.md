@@ -197,6 +197,36 @@ installer detects it from the OS architecture rather than the process
 architecture, so it does the right thing even when PowerShell itself is running
 emulated under x64.
 
+## If your Claude Code is the VS Code extension
+
+Nothing extra is needed, but one detail surprises people. The extension bundles
+its own copy of Claude Code's CLI and **does not put `claude` on your `PATH`**,
+so a machine can have Claude Code and no `claude` command at all.
+
+That is fine. Intenter's hooks go into `~/.claude/settings.json`, which the
+extension and the CLI both read, so the gate works the same in the editor panel
+as in a terminal. Install Intenter as above, then:
+
+```sh
+intenter setup claude
+```
+
+Setup recognizes the extension when there is no binary to find. It reports the
+Claude Code version as unknown — it had nothing to ask — and says which
+extension it found. Everything else is identical.
+
+Two consequences worth knowing:
+
+- **Restart Claude Code afterwards.** It reads its hooks when a session starts.
+  If setup had to create `~/.claude/skills/`, a restart is also what lets it
+  notice the new `/intenter` command.
+- **The update prompt cannot appear in the panel.** It runs when a shell starts,
+  and the panel is not a shell. Setup says so; use `intenter update --check`.
+
+If you also want to run `claude` in VS Code's integrated terminal, that needs
+Claude Code's own [standalone CLI install](https://code.claude.com/docs/en/vs-code),
+which is separate from the extension.
+
 ## Package managers
 
 Use these if you would rather your usual tool tracked the upgrade.

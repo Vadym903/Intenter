@@ -13,7 +13,7 @@ Exit codes: `0` success, `1` error, `2` the daemon is unreachable.
 | [`intenter approval`](intenter_approval.md) | Inspect and change one approval |
 | [`intenter approval disable`](intenter_approval_disable.md) | Temporarily stop an approval from matching |
 | [`intenter approval enable`](intenter_approval_enable.md) | Let a disabled approval match again |
-| [`intenter approval revoke`](intenter_approval_revoke.md) | Permanently stop an approval from matching |
+| [`intenter approval revoke`](intenter_approval_revoke.md) | Permanently stop a permission from matching |
 | [`intenter approval show`](intenter_approval_show.md) | Show everything one approval covers |
 | [`intenter approvals`](intenter_approvals.md) | List what is trusted in this project |
 | [`intenter approve`](intenter_approve.md) | Remember the effects of an evaluated command |
@@ -30,6 +30,7 @@ Exit codes: `0` success, `1` error, `2` the daemon is unreachable.
 | [`intenter history show`](intenter_history_show.md) | Explain one decision in full |
 | [`intenter hook`](intenter_hook.md) | Handle an agent hook invocation (called by the agent, not by you) |
 | [`intenter hook claude`](intenter_hook_claude.md) | Handle a Claude Code hook event read from stdin |
+| [`intenter menu`](intenter_menu.md) | What this project allows, and what you can do about it |
 | [`intenter setup`](intenter_setup.md) | Install the Intenter integration for an agent |
 | [`intenter setup claude`](intenter_setup_claude.md) | Detect Claude Code, install the hooks and start the daemon |
 | [`intenter status`](intenter_status.md) | Show the daemon, integration and recent activity |

@@ -43,6 +43,9 @@ type SetupOptions struct {
 	// somebody who declined one edit to their shell files did not ask for
 	// another.
 	NoStartupCheck bool
+	// SkillActions is the `/intenter` menu the skill file dispatches. The CLI
+	// supplies it, because the CLI owns the command surface it names.
+	SkillActions []SkillAction
 }
 
 // Step is one line of the setup report.
@@ -88,6 +91,8 @@ type SetupResult struct {
 	// StartupCheckFiles are the shell start-up files the update check was
 	// written into.
 	StartupCheckFiles []string
+	// SkillInstall is what installing the `/intenter` command did.
+	SkillInstall SkillInstall
 }
 
 // Failed reports whether any step failed.
@@ -136,6 +141,7 @@ func (s *Setup) Run(ctx context.Context) (*SetupResult, error) {
 		s.detect,
 		s.backup,
 		s.installHooks,
+		s.installSkill,
 		s.installStartupCheck,
 		s.initializeStorage,
 		s.installService,
@@ -181,11 +187,7 @@ func (s *Setup) detect(ctx context.Context, result *SetupResult) Step {
 			}
 		}
 
-		detail := install.Version
-		if detail == "" {
-			detail = "version unknown"
-		}
-		return detail, strings.Join(install.Warnings, "; "), nil
+		return install.Describe(), strings.Join(install.Warnings, "; "), nil
 	})
 }
 
@@ -225,6 +227,45 @@ func (s *Setup) installHooks(_ context.Context, result *SetupResult) Step {
 	})
 }
 
+// installSkill writes the `/intenter` command into Claude's skills directory.
+//
+// It is not a required step. A machine where the file cannot be written still
+// has a working gate; it just has no menu inside the session, and the CLI does
+// everything the menu does. Failing setup over it would trade the whole
+// integration for one convenience.
+func (s *Setup) installSkill(_ context.Context, result *SetupResult) Step {
+	return s.timed("Agent command /intenter", func() (string, string, error) {
+		configDir := result.Installation.ConfigDir
+		if s.options.DryRun {
+			return fmt.Sprintf("would write %s", SkillPath(configDir)), "", nil
+		}
+
+		install, err := InstallSkill(configDir, s.platform.DataDir(), s.options.SkillActions, s.now())
+		if err != nil {
+			return "not installed", fmt.Sprintf("%v — `/intenter` will not be available", err), nil
+		}
+		result.SkillInstall = install
+
+		warning := ""
+		if install.BackupPath != "" {
+			warning = "a file Intenter did not write was already at that path; " +
+				"it was saved to " + install.BackupPath
+		}
+		if install.CreatedSkillsDir {
+			// Claude Code watches skill directories for changes, but only ones
+			// that existed when the session started. The first time this
+			// directory is created, a running session cannot see it.
+			warning = strings.TrimSpace(warning + " restart Claude Code so it picks up the new skills directory.")
+		}
+
+		detail := install.Path
+		if install.Unchanged {
+			detail += " (unchanged)"
+		}
+		return detail, warning, nil
+	})
+}
+
 // installStartupCheck adds the managed block that shows the update prompt when
 // a terminal opens (003 FR-009).
 //
@@ -253,6 +294,15 @@ func (s *Setup) installStartupCheck(_ context.Context, result *SetupResult) Step
 		if status.BlockedByPolicy {
 			warning = "PowerShell will not run profile scripts under the current execution " +
 				"policy, so the update prompt cannot appear. Fix: " + status.PolicyFix
+		}
+		// The check runs when a shell starts. Claude Code's VS Code panel is not
+		// a shell and never sources a profile, so for someone who works there
+		// this is installed and will still never fire. Saying it is installed
+		// and stopping would be true and useless.
+		if result.Installation != nil && result.Installation.Executable == "" {
+			warning = strings.TrimSpace(warning + " This runs when a terminal opens, so it " +
+				"cannot appear in Claude Code's VS Code panel — check for updates with " +
+				"`intenter update --check`.")
 		}
 		return strings.Join(status.Installed, ", "), warning, nil
 	})

@@ -206,3 +206,74 @@ func TestEnsureSettingsFileIsIdempotent(t *testing.T) {
 		t.Errorf("an existing settings file must not be replaced, got %s", content)
 	}
 }
+
+// The VS Code extension bundles its own copy of the CLI and deliberately does
+// not put `claude` on PATH. Until this was handled, a developer whose Claude
+// Code is that extension could not install Intenter at all: detection failed
+// and setup stopped on its first step. The hooks never needed the binary —
+// they go into a settings file the extension and the CLI both read.
+func TestDetectFindsTheVSCodeExtensionWithNoBinaryOnPath(t *testing.T) {
+	editors := map[string]string{
+		"VS Code":                 filepath.Join(".vscode", "extensions"),
+		"VS Code Insiders":        filepath.Join(".vscode-insiders", "extensions"),
+		"VS Code Remote":          filepath.Join(".vscode-server", "extensions"),
+		"VS Code Remote Insiders": filepath.Join(".vscode-server-insiders", "extensions"),
+		"Cursor":                  filepath.Join(".cursor", "extensions"),
+		"Windsurf":                filepath.Join(".windsurf", "extensions"),
+	}
+
+	for editor, dir := range editors {
+		t.Run(editor, func(t *testing.T) {
+			home := t.TempDir()
+			extension := filepath.Join(home, dir, "anthropic.claude-code-2.1.4")
+			if err := os.MkdirAll(extension, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+
+			install, err := Detect(context.Background(), detectPlatform(home), "")
+			if err != nil {
+				t.Fatalf("detect must succeed on the extension alone: %v", err)
+			}
+			if !install.Found() {
+				t.Fatal("an extension-only installation is still an installation")
+			}
+			if install.Executable != "" {
+				t.Errorf("executable = %q, want none", install.Executable)
+			}
+			if !strings.Contains(install.Evidence, editor) {
+				t.Errorf("evidence = %q, want it to name %s", install.Evidence, editor)
+			}
+			if !strings.Contains(install.Describe(), "version unknown") {
+				t.Errorf("describe = %q, want it to admit the version is unknown", install.Describe())
+			}
+			if len(install.Warnings) == 0 {
+				t.Error("a version that could not be read is worth saying out loud")
+			}
+		})
+	}
+}
+
+// A `~/.claude` directory is not evidence: it outlives an uninstall of Claude
+// Code, and Intenter creates it itself when it writes the settings file — so
+// accepting it would have setup confirming its own earlier run.
+func TestDetectDoesNotTreatTheConfigDirectoryAsEvidence(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	install, err := Detect(context.Background(), detectPlatform(home), "")
+	if err == nil {
+		t.Fatal("a bare configuration directory must not count as an installation")
+	}
+	if install.Found() {
+		t.Error("nothing should have been found")
+	}
+	// The error has to name everywhere it looked, or a VS Code user has no way
+	// to tell why it did not find their extension.
+	for _, want := range []string{"PATH", "extension"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to mention %q", err, want)
+		}
+	}
+}

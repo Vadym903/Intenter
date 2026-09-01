@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -551,5 +552,141 @@ func TestOwnershipDetection(t *testing.T) {
 				t.Errorf("OwnedByAnyIntenter() = %v, want %v", got, tt.owned)
 			}
 		})
+	}
+}
+
+// Removing a permission has to reach the rule Claude holds of its own, or the
+// command keeps running silently and the removal changed nothing that matters.
+// The same guest rules apply as everywhere else in this file: only the named
+// rule goes, the backup comes first, and a file that is not this user's to
+// change is not changed.
+
+func TestRemoveAllowRuleTakesOnlyTheNamedRule(t *testing.T) {
+	path := settingsFixture(t, userSettings)
+	dataDir := t.TempDir()
+	before := readTree(t, path)
+
+	removal, err := RemoveAllowRule(path, dataDir, "Bash(npm run test)", time.Now())
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !removal.Removed {
+		t.Fatal("the rule was in the file and was not removed")
+	}
+
+	after := readTree(t, path)
+	allow := after["permissions"].(map[string]any)["allow"].([]any)
+	if len(allow) != 1 || allow[0] != "Read(//tmp/**)" {
+		t.Errorf("allow = %v, want only the untouched rule", allow)
+	}
+
+	// Everything else in the file is the user's and must be exactly as it was.
+	for _, key := range []string{"model", "env", "hooks"} {
+		if !reflect.DeepEqual(before[key], after[key]) {
+			t.Errorf("%q changed:\nbefore: %#v\nafter:  %#v", key, before[key], after[key])
+		}
+	}
+	if deny := after["permissions"].(map[string]any)["deny"]; !reflect.DeepEqual(
+		deny, before["permissions"].(map[string]any)["deny"]) {
+		t.Error("the deny list must not be touched")
+	}
+}
+
+// FR-021: a removal never deletes history. For a rule there is no database row,
+// so the backup is the record — which means it has to actually hold the rule.
+func TestRemoveAllowRuleBacksUpTheRuleItRemoves(t *testing.T) {
+	path := settingsFixture(t, userSettings)
+	dataDir := t.TempDir()
+
+	removal, err := RemoveAllowRule(path, dataDir, "Bash(npm run test)", time.Now())
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if removal.BackupPath == "" {
+		t.Fatal("INVARIANT I-9: the file was modified without a backup")
+	}
+	saved, err := os.ReadFile(removal.BackupPath)
+	if err != nil {
+		t.Fatalf("read the backup: %v", err)
+	}
+	if !strings.Contains(string(saved), "Bash(npm run test)") {
+		t.Errorf("the backup does not hold the removed rule, so nothing does:\n%s", saved)
+	}
+}
+
+func TestRemoveAllowRuleLeavesAStaleTargetAlone(t *testing.T) {
+	path := settingsFixture(t, userSettings)
+	dataDir := t.TempDir()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	removal, err := RemoveAllowRule(path, dataDir, "Bash(npm run something-else)", time.Now())
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if removal.Removed {
+		t.Error("a rule that is not in the file must not report as removed")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Error("a stale target must change nothing — removing something else because " +
+			"the text moved is worse than doing nothing")
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "backups")); err == nil {
+		t.Error("nothing was changed, so nothing should have been backed up")
+	}
+}
+
+func TestRemoveAllowRuleRefusesAManagedPolicyFile(t *testing.T) {
+	managed := managedSettingsPath(runtime.GOOS)
+	dataDir := t.TempDir()
+
+	_, err := RemoveAllowRule(managed, dataDir, "Bash(npm run test)", time.Now())
+	if err == nil {
+		t.Fatal("a managed policy file belongs to an administrator and is never edited")
+	}
+	if !strings.Contains(err.Error(), "managed") {
+		t.Errorf("the refusal must say why: %v", err)
+	}
+}
+
+func TestRemoveAllowRuleReportsAnUnwritableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not work this way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permission bits this test relies on")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(userSettings), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// The write is atomic through a temporary file, so it is the directory that
+	// has to be closed to make it fail.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if _, err := RemoveAllowRule(path, t.TempDir(), "Bash(npm run test)", time.Now()); err == nil {
+		t.Fatal("an unwritable settings file must be reported, not silently skipped")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Error("a failed removal must leave the file exactly as it was")
 	}
 }

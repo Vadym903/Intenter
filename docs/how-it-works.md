@@ -242,6 +242,20 @@ The dialog itself cannot be labelled: Claude renders its own options, and
 nothing a hook returns reaches them. What Intenter can do is say, in the line
 before the dialog, what that answer will mean here.
 
+### Two things trust a command, so both are listed
+
+That leftover string rule is why "what is trusted here" has two answers.
+`intenter approvals` shows both: the approvals Intenter holds, and the rules
+Claude holds of its own. A rule allows a command whether or not Intenter ever
+imported it, so a list that showed only approvals would tell you this project
+trusts less than it does.
+
+It is also why taking a permission back reaches both. `intenter approval revoke`
+removes the approval *and* the rules that grant the same command — otherwise the
+command would keep running silently and the revoke would have changed only a
+record. What it will change is printed first, and the settings file is backed up
+before it is written; see [security model](security-model.md).
+
 ## Why there is no model in the loop
 
 Matching is a pure function of the resolved action and the stored approvals. The

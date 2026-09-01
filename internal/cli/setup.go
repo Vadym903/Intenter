@@ -54,6 +54,10 @@ func newSetupClaudeCommand(app *App) *cobra.Command {
 func runSetup(ctx context.Context, app *App, options claude.SetupOptions) error {
 	ctx = orBackground(ctx)
 
+	// The menu is defined next to the commands it names, so the skill file and
+	// the CLI cannot disagree about what `/intenter allowed` runs.
+	options.SkillActions = SkillActions()
+
 	setup := claude.NewSetup(app.Platform, app.Config, app.ServiceManager(), options)
 	result, runErr := setup.Run(ctx)
 
@@ -83,6 +87,10 @@ func runSetup(ctx context.Context, app *App, options claude.SetupOptions) error 
 	}
 	app.Printf("\nIntenter is ready. Restart any running Claude Code sessions to activate\n")
 	app.Printf("the hooks — Claude reads them once, when a session starts.\n")
+	if result.SkillInstall.Path != "" {
+		app.Printf("Then type `/intenter` in a session to see what this project is allowed\n")
+		app.Printf("to run without asking, and to take a permission back.\n")
+	}
 	return nil
 }
 

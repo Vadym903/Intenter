@@ -344,9 +344,10 @@ A ten-minute walkthrough from nothing to your first blocked command lives in
 | Command | What it does |
 |---|---|
 | `intenter setup claude` | Install the Claude Code integration |
-| `intenter approvals` | List what is trusted in this project |
+| `intenter menu` | What this project allows, and what you can do about it |
+| `intenter approvals` | List what is trusted here — Intenter's approvals and Claude's own rules |
 | `intenter approval show <id>` | Show everything one approval covers |
-| `intenter approval revoke <id>` | Stop an approval from matching, permanently |
+| `intenter approval revoke <id>` | Take a permission away, including the agent rule behind it |
 | `intenter approve <event-id>` | Remember the effects of an evaluated command |
 | `intenter history` | The decision log |
 | `intenter history show <id>` | Why one command was allowed, asked about or blocked |
@@ -359,6 +360,11 @@ A ten-minute walkthrough from nothing to your first blocked command lives in
 Every list and show command takes `--json`. `intenter daemon` manages the
 background service directly. The full reference is in
 [docs/cli/](docs/cli/README.md).
+
+Inside a Claude Code session, **`/intenter`** opens the same thing without
+leaving the conversation: what this project runs without a prompt, and every
+action you can take, each with an example. Setup installs it; every action it
+offers is also a command you can type in a terminal.
 
 ## Security & limitations
 
@@ -530,9 +536,14 @@ upstream.
 shell tools are the only tools gated, and the approval database schema may change
 before 1.0 — each such change is listed in the [changelog](CHANGELOG.md).
 
-**Planned:** adapters for other agents and editors (Codex, Cursor, VS Code and
-JetBrains) and a documentation website. Planned means not shipped — nothing in
-this paragraph is available today.
+Claude Code is integrated however you run it, including inside VS Code: the
+hooks live in `~/.claude/settings.json`, which the editor extension and the CLI
+both read. That is Claude Code working in VS Code — not an Intenter extension
+for VS Code, which does not exist.
+
+**Planned:** adapters for other agents and editors (Codex, Cursor, JetBrains,
+and an extension of Intenter's own) and a documentation website. Planned means
+not shipped — nothing in this paragraph is available today.
 
 ## Contributing
 

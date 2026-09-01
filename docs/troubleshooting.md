@@ -49,6 +49,43 @@ grep -l "intenter" ~/.zshrc ~/.bashrc ~/.profile ~/.zprofile 2>/dev/null
 macOS zsh users: a login shell reads `~/.zprofile`, not `~/.zshrc`. The installer
 writes both.
 
+## Claude Code in VS Code
+
+The extension bundles its own copy of the CLI and **does not add `claude` to
+your `PATH`**. That is not a problem for Intenter: the hooks live in
+`~/.claude/settings.json`, which the extension and the CLI both read, so the
+gate works the same in the panel as in a terminal.
+
+Three things follow from it.
+
+**`intenter setup claude` used to fail here.** It looked for the `claude`
+binary, found none, and stopped. It no longer needs one: it recognizes the
+extension directory instead, reports the version as unknown, and installs the
+hooks as usual. If it still cannot find anything, it names everywhere it
+looked — check that the extension is really installed, or install the
+[standalone CLI](install.md) as well.
+
+**`intenter doctor` names what it found.** On a machine with the extension and
+no CLI it reports `Claude Code — version unknown, found by the Claude Code
+extension for VS Code`. It will not tell you to install what you already have.
+
+**The update prompt cannot appear in the panel.** It runs when a *shell* starts,
+and the extension's panel is not a shell. Setup says so. Check for updates with:
+
+```sh
+intenter update --check
+```
+
+**`/intenter` does not appear in the panel's `/` menu.** Claude Code's own
+documentation says the extension offers a subset of commands and skills. If it
+is missing there, everything it does is still one command away in VS Code's
+integrated terminal — `intenter menu` prints the same screen, and every action
+in it names the terminal command that performs it. Confirm the file is
+installed with `intenter doctor`; if it is absent, run `intenter setup claude`.
+
+If you have just installed Intenter, restart Claude Code. It reads its hooks
+when a session starts, and it only watches skill directories that existed then.
+
 ## Claude runs commands without asking
 
 Three possibilities, in the order worth checking.

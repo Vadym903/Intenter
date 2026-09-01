@@ -24,6 +24,7 @@ intenter
 | [`intenter doctor`](intenter_doctor.md) | Check the installation and suggest fixes |
 | [`intenter history`](intenter_history.md) | Show what Intenter decided, and why |
 | [`intenter hook`](intenter_hook.md) | Handle an agent hook invocation (called by the agent, not by you) |
+| [`intenter menu`](intenter_menu.md) | What this project allows, and what you can do about it |
 | [`intenter setup`](intenter_setup.md) | Install the Intenter integration for an agent |
 | [`intenter status`](intenter_status.md) | Show the daemon, integration and recent activity |
 | [`intenter summary`](intenter_summary.md) | Count what Intenter decided, and how many prompts it answered for you |

@@ -82,6 +82,7 @@ func runDoctor(ctx context.Context, app *App) DoctorReport {
 		checkEndpointPermissions(app),
 		checkClaude(ctx, app, meta),
 		checkHooks(app, meta),
+		checkSkill(app, meta),
 		checkLegacyLeftovers(ctx, app, meta),
 		checkInstalledPaths(app, meta),
 		checkBackups(app),
@@ -282,13 +283,13 @@ func checkClaude(ctx context.Context, app *App, meta map[string]string) Check {
 	install, err := claude.Detect(ctx, app.Platform, app.Config.Claude.SettingsPath)
 	if err != nil {
 		return Check{Name: "Claude Code", Detail: err.Error(),
-			Fix: "install Claude Code, then run `intenter setup claude`"}
+			Fix: "install Claude Code — the CLI, the VS Code extension, or both — then run `intenter setup claude`"}
 	}
 
-	detail := install.Version
-	if detail == "" {
-		detail = "version unknown"
-	}
+	// Found without a binary: the VS Code extension does not put `claude` on
+	// PATH. Telling that user to install what they already have would send them
+	// in a circle, so name what was found instead.
+	detail := install.Describe()
 	if recorded := meta[storage.MetaClaudeVersion]; recorded != "" && recorded != install.Version {
 		detail += fmt.Sprintf(" (was %s at setup)", recorded)
 	}
@@ -297,6 +298,36 @@ func checkClaude(ctx context.Context, app *App, meta map[string]string) Check {
 			Detail: detail + " — " + strings.Join(install.Warnings, "; ")}
 	}
 	return Check{Name: "Claude Code", OK: true, Detail: detail}
+}
+
+// checkSkill confirms `/intenter` is installed and is what this build writes.
+//
+// A file left by an older version keeps working but offers the menu that
+// version had, so a stale one is reported rather than passed: the gap would
+// otherwise be invisible until someone typed an action that no longer exists.
+func checkSkill(app *App, meta map[string]string) Check {
+	configDir := claudeConfigDir(app, meta)
+	path := claude.SkillPath(configDir)
+
+	current, err := claude.SkillUpToDate(configDir, SkillActions())
+	if err != nil {
+		return Check{Name: "Agent command", Detail: err.Error(),
+			Fix: "fix the file, then run `intenter setup claude`"}
+	}
+	if !current {
+		return Check{Name: "Agent command", Detail: path + " is missing or out of date",
+			Fix: "run `intenter setup claude` to install `/intenter`"}
+	}
+	return Check{Name: "Agent command", OK: true, Detail: "/intenter at " + path}
+}
+
+// claudeConfigDir is the directory Claude's settings and skills live in,
+// preferring what setup recorded over the default location.
+func claudeConfigDir(app *App, meta map[string]string) string {
+	if path := meta[storage.MetaClaudeSettingsPath]; path != "" {
+		return filepath.Dir(path)
+	}
+	return filepath.Join(app.Platform.HomeDir(), ".claude")
 }
 
 // checkHooks confirms the hooks are still installed.

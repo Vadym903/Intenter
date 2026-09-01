@@ -33,12 +33,37 @@ type Installation struct {
 	SettingsPath string
 	// ConfigDir is Claude's own directory, `~/.claude`.
 	ConfigDir string
+	// Evidence says how Claude Code was found when there was no executable to
+	// find — the VS Code extension, or a configuration directory it left.
+	Evidence string
 	// Warnings are non-fatal findings worth telling the user about.
 	Warnings []string
 }
 
 // Found reports whether an agent installation was located.
-func (i *Installation) Found() bool { return i != nil && i.Executable != "" }
+//
+// An executable is not required. The VS Code extension bundles its own copy of
+// the CLI and deliberately does not put `claude` on PATH, so for a developer
+// whose Claude Code is that extension there is no binary to find — and hooks go
+// into a settings file either way. Refusing to install for them would be
+// refusing the integration to the people who need it most.
+func (i *Installation) Found() bool {
+	return i != nil && (i.Executable != "" || i.Evidence != "")
+}
+
+// Describe names what was found, for the setup report.
+func (i *Installation) Describe() string {
+	switch {
+	case i == nil:
+		return ""
+	case i.Version != "":
+		return i.Version
+	case i.Evidence != "":
+		return "version unknown, found by " + i.Evidence
+	default:
+		return "version unknown"
+	}
+}
 
 // Detect locates Claude Code (§12.2 step 1).
 //
@@ -60,8 +85,20 @@ func Detect(ctx context.Context, p platform.Platform, settingsOverride string) (
 
 	install.Executable = findExecutable(p, home)
 	if install.Executable == "" {
-		return install, fmt.Errorf(
-			"claude: Claude Code was not found on PATH or in %s", filepath.Join(home, ".local", "bin"))
+		// No binary is not the same as no Claude Code. Look for the evidence a
+		// VS Code-only installation leaves instead.
+		install.Evidence = findEvidence(home)
+		if install.Evidence == "" {
+			return install, fmt.Errorf(
+				"claude: Claude Code was not found — no `claude` on PATH or in %s, "+
+					"and no Claude Code extension in %s",
+				filepath.Join(home, ".local", "bin"), filepath.Join(home, ".vscode", "extensions"))
+		}
+		install.Warnings = append(install.Warnings,
+			"no `claude` on PATH, so the version could not be read; found by "+install.Evidence+
+				". The hooks work either way — they are installed into the settings file both "+
+				"the extension and the CLI read.")
+		return install, nil
 	}
 
 	version, err := readVersion(ctx, install.Executable)
@@ -93,6 +130,48 @@ func findExecutable(p platform.Platform, home string) string {
 	} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
+		}
+	}
+	return ""
+}
+
+// editorExtensionDirs are the places an editor keeps its installed extensions.
+//
+// VS Code proper, its Insiders build, the server-side halves used by Remote-SSH
+// and devcontainers, and the forks that install the same extension from Open
+// VSX. Each is relative to the home directory.
+var editorExtensionDirs = []struct {
+	editor string
+	path   []string
+}{
+	{"VS Code", []string{".vscode", "extensions"}},
+	{"VS Code Insiders", []string{".vscode-insiders", "extensions"}},
+	{"VS Code Remote", []string{".vscode-server", "extensions"}},
+	{"VS Code Remote Insiders", []string{".vscode-server-insiders", "extensions"}},
+	{"Cursor", []string{".cursor", "extensions"}},
+	{"Windsurf", []string{".windsurf", "extensions"}},
+}
+
+// extensionGlob matches the published Claude Code extension, whose directory
+// carries its version: `anthropic.claude-code-2.1.4`.
+const extensionGlob = "anthropic.claude-code-*"
+
+// findEvidence looks for Claude Code where there is no executable to find.
+//
+// The VS Code extension bundles its own CLI and does not add `claude` to PATH,
+// so an extension-only machine has an editor extension directory and nothing on
+// PATH at all.
+//
+// Only the extension directory counts. A `~/.claude` directory would be weaker
+// evidence than it looks: it outlives an uninstall of Claude Code, and Intenter
+// creates it itself when it writes the settings file — so accepting it would
+// eventually have setup confirming its own earlier run.
+func findEvidence(home string) string {
+	for _, candidate := range editorExtensionDirs {
+		pattern := filepath.Join(append([]string{home}, candidate.path...)...)
+		matches, err := filepath.Glob(filepath.Join(pattern, extensionGlob))
+		if err == nil && len(matches) > 0 {
+			return "the Claude Code extension for " + candidate.editor
 		}
 	}
 	return ""

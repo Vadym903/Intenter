@@ -381,3 +381,158 @@ func TestUninstallWithoutAnInstallationIsSafe(t *testing.T) {
 		t.Error("uninstalling what was never installed must change nothing")
 	}
 }
+
+func TestSetupInstallsTheAgentCommand(t *testing.T) {
+	f := newSetupFixture(t, userSettings)
+	result := f.runSetup(t, SetupOptions{SkillActions: testSkillActions()})
+
+	configDir := filepath.Join(f.platform.HomeDir(), ".claude")
+	if result.SkillInstall.Path != SkillPath(configDir) {
+		t.Errorf("skill path = %q, want %q", result.SkillInstall.Path, SkillPath(configDir))
+	}
+	if _, err := os.Stat(SkillPath(configDir)); err != nil {
+		t.Fatalf("the /intenter command was not written: %v", err)
+	}
+
+	// Claude Code only watches skill directories that existed when the session
+	// started, so the one case that needs a restart has to be said out loud.
+	step := findStep(t, result, "Agent command /intenter")
+	if !result.SkillInstall.CreatedSkillsDir {
+		t.Error("the skills directory was created but not reported")
+	}
+	if !strings.Contains(step.Warning, "restart Claude Code") {
+		t.Errorf("step warning = %q, want the restart notice", step.Warning)
+	}
+}
+
+func TestSetupDryRunDoesNotWriteTheAgentCommand(t *testing.T) {
+	f := newSetupFixture(t, userSettings)
+	result := f.runSetup(t, SetupOptions{DryRun: true, SkillActions: testSkillActions()})
+
+	configDir := filepath.Join(f.platform.HomeDir(), ".claude")
+	if _, err := os.Stat(SkillPath(configDir)); !os.IsNotExist(err) {
+		t.Error("a dry run must not write the /intenter command")
+	}
+	if step := findStep(t, result, "Agent command /intenter"); !strings.Contains(step.Detail, "would write") {
+		t.Errorf("the dry run must say what it would do, got %q", step.Detail)
+	}
+}
+
+// A failure to write the command must not fail the whole setup: the gate works
+// without a menu, and the CLI does everything the menu does.
+func TestSetupSurvivesAnUnwritableSkillDirectory(t *testing.T) {
+	f := newSetupFixture(t, userSettings)
+	configDir := filepath.Join(f.platform.HomeDir(), ".claude")
+	// A regular file where the skills directory has to go.
+	if err := os.WriteFile(SkillsDir(configDir), []byte("in the way\n"), 0o600); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	result := f.runSetup(t, SetupOptions{SkillActions: testSkillActions()})
+
+	step := findStep(t, result, "Agent command /intenter")
+	if !step.OK() {
+		t.Errorf("an unwritable skill file must not fail setup: %v", step.Err)
+	}
+	if step.Warning == "" {
+		t.Error("a skipped /intenter must be reported as a warning")
+	}
+	if hooks := findStep(t, result, "Permission hooks installed"); !hooks.OK() {
+		t.Errorf("the hooks must still be installed: %v", hooks.Err)
+	}
+}
+
+func TestUninstallRemovesTheAgentCommand(t *testing.T) {
+	f := newSetupFixture(t, userSettings)
+	f.runSetup(t, SetupOptions{SkillActions: testSkillActions()})
+
+	configDir := filepath.Join(f.platform.HomeDir(), ".claude")
+	if _, err := os.Stat(SkillPath(configDir)); err != nil {
+		t.Fatalf("prepare: the command was not installed: %v", err)
+	}
+
+	uninstall := NewUninstall(f.platform, config.Default(), platform.NewUnmanagedService(),
+		UninstallOptions{})
+	uninstall.now = func() time.Time { return time.Date(2026, 8, 16, 13, 0, 0, 0, time.UTC) }
+	result, err := uninstall.Run(context.Background())
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if !result.SkillRemoved {
+		t.Error("uninstall did not report removing the /intenter command")
+	}
+	if _, err := os.Stat(SkillDir(configDir)); !os.IsNotExist(err) {
+		t.Error("a leftover /intenter would run a binary the user just removed")
+	}
+}
+
+// Until this worked, a developer whose Claude Code is the VS Code extension
+// could not install Intenter at all: the extension does not put `claude` on
+// PATH, detection failed, and setup stopped on its first step. Nothing about
+// the hooks ever needed that binary.
+func TestSetupCompletesForAVSCodeExtensionOnlyUser(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// The extension, and deliberately no `claude` anywhere.
+	if err := os.MkdirAll(filepath.Join(home, ".vscode", "extensions", "anthropic.claude-code-2.1.4"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(userSettings), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	f := &setupFixture{
+		platform: fakePlatform{
+			home:       home,
+			dataDir:    filepath.Join(base, "data"),
+			runtimeDir: filepath.Join(base, "run"),
+			executable: filepath.Join(base, "bin", "intenter"),
+		},
+		settingsPath: settingsPath,
+	}
+	result := f.runSetup(t, SetupOptions{SkillActions: testSkillActions()})
+
+	detect := findStep(t, result, "Claude Code detected")
+	if !detect.OK() {
+		t.Fatalf("setup must not refuse a VS Code-only installation: %v", detect.Err)
+	}
+	if !strings.Contains(detect.Detail, "version unknown") {
+		t.Errorf("detail = %q, want it to admit the version is unknown", detect.Detail)
+	}
+	if !strings.Contains(detect.Warning, "VS Code") {
+		t.Errorf("warning = %q, want it to name what was found", detect.Warning)
+	}
+
+	if hooks := findStep(t, result, "Permission hooks installed"); !hooks.OK() {
+		t.Errorf("the hooks must still be installed: %v", hooks.Err)
+	}
+	if _, err := os.Stat(SkillPath(filepath.Join(home, ".claude"))); err != nil {
+		t.Errorf("/intenter must be installed for this user too: %v", err)
+	}
+
+	// The terminal update check is installed but can never fire in the panel,
+	// and saying it is installed and stopping would be true and useless.
+	startup := findStep(t, result, "Start-up update check")
+	if !strings.Contains(startup.Warning, "VS Code panel") {
+		t.Errorf("warning = %q, want it to say the check cannot appear there", startup.Warning)
+	}
+	if !strings.Contains(startup.Warning, "intenter update --check") {
+		t.Errorf("warning = %q, want it to give the way that does work", startup.Warning)
+	}
+}
+
+// findStep returns one step of a setup or uninstall report by name.
+func findStep(t *testing.T, result *SetupResult, name string) Step {
+	t.Helper()
+	for _, step := range result.Steps {
+		if step.Name == name {
+			return step
+		}
+	}
+	t.Fatalf("no step named %q in %+v", name, result.Steps)
+	return Step{}
+}

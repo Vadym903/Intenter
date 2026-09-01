@@ -276,6 +276,17 @@ func (e *Env) WriteWorkspaceFile(relPath, content string) {
 	writeFile(e.t, path, content)
 }
 
+// ReadWorkspaceFile reads a file from the workspace.
+func (e *Env) ReadWorkspaceFile(relPath string) string {
+	e.t.Helper()
+	path := filepath.Join(e.Workspace, filepath.FromSlash(relPath))
+	content, err := os.ReadFile(path)
+	if err != nil {
+		e.t.Fatalf("read %s: %v", path, err)
+	}
+	return string(content)
+}
+
 // SetScripts replaces the package.json scripts block.
 func (e *Env) SetScripts(scripts string) {
 	e.t.Helper()

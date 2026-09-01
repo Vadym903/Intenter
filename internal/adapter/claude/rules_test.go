@@ -366,3 +366,109 @@ func TestSettingsUserOverride(t *testing.T) {
 		t.Errorf("user settings path = %q, want the override %q", got, override)
 	}
 }
+
+// projectRulesFixture builds a home and a project with settings files.
+func projectRulesFixture(t *testing.T) (home, project string, write func(path string, allow ...string)) {
+	t.Helper()
+	base := t.TempDir()
+	home = filepath.Join(base, "home")
+	project = filepath.Join(home, "src", "app")
+	for _, dir := range []string{
+		filepath.Join(home, ".claude"),
+		filepath.Join(project, ".git"),
+		filepath.Join(project, ".claude"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	write = func(path string, allow ...string) {
+		t.Helper()
+		content, err := json.Marshal(Settings{Permissions: Permissions{Allow: allow}})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	return home, project, write
+}
+
+func TestProjectRulesCollectsEveryScope(t *testing.T) {
+	home, project, write := projectRulesFixture(t)
+	write(filepath.Join(home, ".claude", "settings.json"), "Bash(git status)", "Read(//tmp/**)")
+	write(filepath.Join(project, ".claude", "settings.json"), "Bash(npm run build)")
+	write(filepath.Join(project, ".claude", "settings.local.json"), "Bash(npm run cleanup)")
+
+	reader := NewSettingsReader(fakePlatform{home: home, os: "darwin"}, "")
+	rules, unreadable := ProjectRules(reader, project, ToolBash)
+	if len(unreadable) != 0 {
+		t.Fatalf("unreadable = %v", unreadable)
+	}
+	if len(rules) != 3 {
+		t.Fatalf("rules = %d, want 3 (the Read rule is another tool's)", len(rules))
+	}
+
+	// Precedence order, and each rule carries the identity removal acts on.
+	wantScopes := []Scope{ScopeUser, ScopeProject, ScopeLocal}
+	for i, rule := range rules {
+		if rule.Scope != wantScopes[i] {
+			t.Errorf("rule %d scope = %s, want %s", i, rule.Scope, wantScopes[i])
+		}
+		if rule.Path == "" {
+			t.Errorf("rule %d has no file, so nothing could remove it", i)
+		}
+		if rule.Key() != string(rule.Scope)+":"+rule.Raw {
+			t.Errorf("rule %d key = %q", i, rule.Key())
+		}
+	}
+}
+
+// A rule in a file this user cannot change here must be reported as such, not
+// quietly listed as removable. Telling someone a permission is gone when it is
+// not is worse than telling them it cannot be removed.
+func TestProjectRulesMarksWhatCannotBeChangedHere(t *testing.T) {
+	home, project, write := projectRulesFixture(t)
+	write(filepath.Join(home, ".claude", "settings.json"), "Bash(git status)")
+	write(filepath.Join(project, ".claude", "settings.json"), "Bash(npm run build)")
+	write(filepath.Join(project, ".claude", "settings.local.json"), "Bash(npm run cleanup)")
+
+	reader := NewSettingsReader(fakePlatform{home: home, os: "darwin"}, "")
+	rules, _ := ProjectRules(reader, project, ToolBash)
+
+	byScope := map[Scope]ProjectRule{}
+	for _, rule := range rules {
+		byScope[rule.Scope] = rule
+	}
+	if rule := byScope[ScopeProject]; rule.Changeable {
+		t.Error("a rule shared through the repository must not be changed by default")
+	} else if rule.Reason == "" {
+		t.Error("a refusal must say why")
+	}
+	for _, scope := range []Scope{ScopeUser, ScopeLocal} {
+		if !byScope[scope].Changeable {
+			t.Errorf("a %s rule is the user's own and must be changeable", scope)
+		}
+	}
+}
+
+func TestProjectRulesReportsAFileItCannotRead(t *testing.T) {
+	home, project, write := projectRulesFixture(t)
+	write(filepath.Join(home, ".claude", "settings.json"), "Bash(git status)")
+	broken := filepath.Join(project, ".claude", "settings.local.json")
+	if err := os.WriteFile(broken, []byte("{ not json"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	reader := NewSettingsReader(fakePlatform{home: home, os: "darwin"}, "")
+	rules, unreadable := ProjectRules(reader, project, ToolBash)
+
+	if len(rules) != 1 {
+		t.Errorf("rules = %d, want the one readable rule", len(rules))
+	}
+	if len(unreadable) != 1 || unreadable[0] != broken {
+		t.Fatalf("unreadable = %v, want %q — a file whose rules cannot be read makes the "+
+			"list incomplete, and saying nothing would present it as complete", unreadable, broken)
+	}
+}

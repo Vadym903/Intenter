@@ -61,6 +61,11 @@ type App struct {
 
 	dataDir    string
 	configPath string
+
+	// initErr is set when start-up failed for a command that must answer
+	// anyway. Only `menu` uses it; every other command treats the same failure
+	// as fatal, which is right for a terminal.
+	initErr error
 }
 
 // ServiceManager returns the injected manager, or the platform's real one.
@@ -136,6 +141,7 @@ func NewRootCommand(out, errOut io.Writer) (*cobra.Command, *App) {
 		newVersionCommand(app),
 		newDaemonCommand(app),
 		newHookCommand(app),
+		newMenuCommand(app),
 		newApprovalsCommand(app),
 		newApprovalCommand(app),
 		newApproveCommand(app),

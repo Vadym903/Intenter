@@ -39,6 +39,10 @@ type SettingsFile struct {
 	Path        string
 	Exists      bool
 	Permissions Permissions
+	// Unreadable marks a file that exists but could not be parsed. Its rules
+	// are unknown rather than absent, which is a different answer and has to be
+	// reported as one.
+	Unreadable bool
 }
 
 // managedSettingsPath returns the platform's managed-policy location, which an
@@ -71,6 +75,7 @@ type cachedSettings struct {
 	modTimeUnixNano int64
 	size            int64
 	permissions     Permissions
+	unreadable      bool
 }
 
 // NewSettingsReader builds a reader for one platform.
@@ -124,12 +129,13 @@ func (r *SettingsReader) Discover(projectDir string) []SettingsFile {
 		if candidate.path == "" {
 			continue
 		}
-		permissions, exists := r.read(candidate.path)
+		permissions, exists, unreadable := r.read(candidate.path)
 		files = append(files, SettingsFile{
 			Scope:       candidate.scope,
 			Path:        candidate.path,
 			Exists:      exists,
 			Permissions: permissions,
+			Unreadable:  unreadable,
 		})
 	}
 	return files
@@ -138,29 +144,32 @@ func (r *SettingsReader) Discover(projectDir string) []SettingsFile {
 // read parses one settings file, reusing the cached parse while the file is
 // unchanged. A malformed file yields no rules rather than an error: it must not
 // stop the hook from answering.
-func (r *SettingsReader) read(path string) (Permissions, bool) {
+func (r *SettingsReader) read(path string) (permissions Permissions, exists, unreadable bool) {
 	info, err := os.Stat(path)
 	if err != nil {
 		r.forget(path)
-		return Permissions{}, false
+		return Permissions{}, false, false
 	}
 
 	r.mu.Lock()
 	cached, ok := r.cache[path]
 	r.mu.Unlock()
 	if ok && cached.modTimeUnixNano == info.ModTime().UnixNano() && cached.size == info.Size() {
-		return cached.permissions, true
+		return cached.permissions, true, cached.unreadable
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return Permissions{}, false
+		// The file is there but this process cannot read it, so its rules are
+		// unknown rather than absent.
+		return Permissions{}, true, true
 	}
 	var settings Settings
 	if err := json.Unmarshal(content, &settings); err != nil {
-		// An unparsable settings file means Intenter cannot tell what the
-		// user permitted, which is the same as having permitted nothing.
-		return Permissions{}, true
+		// An unparsable settings file means Intenter cannot tell what the user
+		// permitted. For the gate that is the same as having permitted nothing;
+		// for anything that reports to the user it is not, so say which it was.
+		return Permissions{}, true, true
 	}
 
 	r.mu.Lock()
@@ -170,7 +179,7 @@ func (r *SettingsReader) read(path string) (Permissions, bool) {
 		permissions:     settings.Permissions,
 	}
 	r.mu.Unlock()
-	return settings.Permissions, true
+	return settings.Permissions, true, false
 }
 
 func (r *SettingsReader) forget(path string) {
