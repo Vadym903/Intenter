@@ -526,9 +526,9 @@ installation.
 **Release status:** the automated suite runs on macOS, Linux and Windows in CI,
 and the release pipeline installs every build with the real installers on all
 three before publishing it. The hands-on walkthrough — a person running the demo
-against a real Claude Code session — is recorded in the
-[validation record](docs/validation-2026-08-19.md); no platform is claimed as
-validated by hand until that record says so. The Homebrew and winget channels
+against a real Claude Code session — follows the
+[validation template](docs/validation-template.md); no platform is claimed as
+validated by hand until a completed record says so. The Homebrew and winget channels
 are not open yet; winget becomes available once the manifest is accepted
 upstream.
 

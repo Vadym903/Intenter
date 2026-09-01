@@ -82,8 +82,8 @@ walkthrough. The checklist, in order:
 
 1. Run the walkthrough from [validation-template.md](validation-template.md)
    against `v0.1.0-rc.1` (every Definition-of-Done step and the §4a hook
-   checks) and record it in the pre-created
-   [validation-2026-08-19.md](validation-2026-08-19.md). Every ✗ is fixed or
+   checks) and record it in a dated copy of the template
+   (`docs/validation-YYYY-MM-DD.md`). Every ✗ is fixed or
    documented first; a fix means a new `rc.N` and a repeat.
 2. `CHANGELOG.md`: date the `## [0.1.0]` heading (`## [0.1.0] - YYYY-MM-DD`).
 3. `README.md`: delete the "Release candidate" block in *Install* (the

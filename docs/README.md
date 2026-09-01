@@ -36,7 +36,7 @@ not met it yet.
 | [Contributing](../CONTRIBUTING.md) | Build, test, and the repository layout |
 | [Release process](release-process.md) | Tagging, what the workflows do, required secrets |
 | [Definition of done](definition-of-done.md) | Where the prototype stands against its own acceptance criteria |
-| [Manual validation record](validation-2026-08-19.md) | In progress — the maintainer's hands-on walkthrough of `v0.1.0-rc.1` before the final release ([template](validation-template.md)) |
+| [Manual validation template](validation-template.md) | The maintainer's hands-on walkthrough of a release candidate before the final release |
 | [Marketing kit](marketing/README.md) | The approved copy, the repository settings, and the checks that keep the README truthful |
 
 The behavioral specification the implementation follows is

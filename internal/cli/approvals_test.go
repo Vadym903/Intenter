@@ -674,7 +674,7 @@ func TestRevokeJSONReportsWhatHappened(t *testing.T) {
 }
 
 // With no terminal to ask from and no `--yes`, a JSON removal must refuse
-// rather than take the machine-readable output as licence to proceed.
+// rather than take the machine-readable output as license to proceed.
 func TestRevokeJSONRefusesWithoutYes(t *testing.T) {
 	f := startFixture(t)
 	id := approveCleanup(t, f)
