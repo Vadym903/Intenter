@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -195,6 +197,7 @@ func startDaemon(ctx context.Context, app *App) error {
 func stopDaemon(ctx context.Context, app *App) error {
 	ctx = orBackground(ctx)
 
+	pid := daemonPID(app)
 	client := app.Client()
 	if err := client.Call(ctx, ipc.MethodShutdown, nil, nil); err != nil {
 		if ipc.IsUnavailable(err) {
@@ -206,12 +209,57 @@ func stopDaemon(ctx context.Context, app *App) error {
 	deadline := time.Now().Add(startTimeout)
 	for time.Now().Before(deadline) {
 		if _, err := daemon.Ping(ctx, app.Platform, ""); err != nil {
+			waitForDaemonExit(ctx, platform.PidFilePath(app.Platform), pid, deadline)
 			app.Printf("Intenter daemon stopped.\n")
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	return Failf(ExitError, "daemon did not stop within %s", startTimeout)
+}
+
+// daemonPID is the process the single-instance pid file names, or zero.
+func daemonPID(app *App) int {
+	return daemon.ReadPidFile(platform.PidFilePath(app.Platform))
+}
+
+// waitForDaemonExit gives a daemon whose endpoint is already gone time to
+// finish shutting down. The listener closes first and the single-instance
+// lock is released last, after the database; a daemon started in between
+// finds the lock held and exits, so a restart then looks like a daemon that
+// never came up. The pid file goes only after the lock (Lock.Release), so the
+// old process is out of the way once the file is missing or names another
+// process — a supervisor may have started the next one already. A pid file
+// left behind by a crash names nothing to wait for. Best effort: past the
+// deadline the caller's own timeout takes over.
+func waitForDaemonExit(ctx context.Context, pidPath string, pid int, deadline time.Time) {
+	if pid == 0 || !processAlive(pid) {
+		return
+	}
+	for time.Now().Before(deadline) {
+		if daemon.ReadPidFile(pidPath) != pid {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// processAlive reports whether pid names a running process. On Windows
+// FindProcess opens the process and fails when there is none; on unix it
+// always succeeds and the null signal asks the kernel instead.
+func processAlive(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return process.Signal(syscall.Signal(0)) == nil
 }
 
 // DaemonStatus is the `daemon status --json` shape.

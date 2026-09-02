@@ -61,6 +61,11 @@ func (l *Lock) writePid(pid int) error {
 }
 
 // Release unlocks and removes the lock and pid files.
+//
+// The pid file goes last, after the lock is free: `daemon stop`, the updater's
+// restart and the uninstaller all take its disappearance as the moment the
+// next daemon can start or the data can be purged. Removing it first would
+// hand a successor a lock that is still held.
 func (l *Lock) Release() error {
 	if l == nil || l.file == nil {
 		return nil

@@ -711,22 +711,24 @@ func startupHookSummary(hook updater.StartupHookState) string {
 // restartDaemon stops the running daemon and starts it again, whichever way it
 // is kept running.
 func restartDaemon(ctx context.Context, app *App) error {
+	pid := daemonPID(app)
 	client := app.Client()
 	if err := client.Call(ctx, ipc.MethodShutdown, nil, nil); err != nil && !ipc.IsUnavailable(err) {
 		return err
 	}
-	waitForDaemonToStop(ctx, app)
+	waitForDaemonToStop(ctx, app, pid)
 
 	return startDaemon(ctx, app)
 }
 
-// waitForDaemonToStop gives the old process time to release the socket, so the
-// new one does not fail to bind it.
-func waitForDaemonToStop(ctx context.Context, app *App) {
+// waitForDaemonToStop gives the old process time to release the endpoint and
+// then the single-instance lock, so the new one can take both.
+func waitForDaemonToStop(ctx context.Context, app *App, pid int) {
 	deadline := time.Now().Add(5 * time.Second)
 	client := app.Client().WithTimeouts(daemonPingBudget, daemonPingBudget)
 	for time.Now().Before(deadline) {
 		if _, err := client.Ping(ctx); err != nil {
+			waitForDaemonExit(ctx, platform.PidFilePath(app.Platform), pid, deadline)
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

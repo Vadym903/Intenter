@@ -93,6 +93,22 @@ func newUpdateFixture(t *testing.T) *updateFixture {
 	return &updateFixture{Env: env, Installed: installed, URL: server, Requests: requests}
 }
 
+// daemonLogs is what the daemons wrote, for a failure only they can explain:
+// from outside, a restart that timed out looks the same whether the new daemon
+// was slow to come up or exited at once.
+func (f *updateFixture) daemonLogs() string {
+	var b strings.Builder
+	for _, name := range []string{"daemon-stdio.log", "daemon.log"} {
+		path := filepath.Join(f.DataDir, "logs", name)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "--- %s ---\n%s\n", path, raw)
+	}
+	return b.String()
+}
+
 // installedVersion asks the installed copy what it is.
 func (f *updateFixture) installedVersion() string {
 	f.t.Helper()
@@ -254,7 +270,7 @@ func TestUpdateApply(t *testing.T) {
 		t.Fatalf("exit code = %d — a shell must start regardless\nout:\n%s\nerr:\n%s", code, out, errOut)
 	}
 	if !strings.Contains(out, "Updated") {
-		t.Fatalf("the update did not report success:\nout:\n%s\nerr:\n%s", out, errOut)
+		t.Fatalf("the update did not report success:\nout:\n%s\nerr:\n%s\n%s", out, errOut, fixture.daemonLogs())
 	}
 	// SC-004.
 	if elapsed > 60*time.Second {

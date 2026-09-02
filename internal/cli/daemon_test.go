@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Vadym903/Intenter/internal/platform"
 	"github.com/Vadym903/Intenter/internal/version"
@@ -143,6 +145,96 @@ func TestDaemonStopWhenNotRunning(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "not running") {
 		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+// A stopped daemon's endpoint goes before its single-instance lock does; the
+// restart must wait for the lock, or the next daemon exits as "already
+// running" and the restart reports a daemon that never came up.
+func TestWaitForDaemonExitOutlastsThePidFile(t *testing.T) {
+	ctx := context.Background()
+	pidPath := filepath.Join(t.TempDir(), "intenter.pid")
+	writePid := func(pid int) {
+		t.Helper()
+		if err := os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", pid)), 0o600); err != nil {
+			t.Fatalf("write pid file: %v", err)
+		}
+	}
+	// This process stands in for the daemon that is still tearing down.
+	old := os.Getpid()
+
+	// The old process is still tearing down: wait until it removes its pid file.
+	writePid(old)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		os.Remove(pidPath)
+	}()
+	started := time.Now()
+	waitForDaemonExit(ctx, pidPath, old, started.Add(5*time.Second))
+	if _, err := os.Stat(pidPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("returned while the pid file still existed (stat: %v)", err)
+	}
+	if elapsed := time.Since(started); elapsed >= 5*time.Second {
+		t.Errorf("waited %s, until the deadline, although the pid file went early", elapsed)
+	}
+
+	// A supervisor has already started the next daemon: its pid file is not
+	// the one to wait for.
+	writePid(old + 1)
+	started = time.Now()
+	waitForDaemonExit(ctx, pidPath, old, started.Add(5*time.Second))
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Errorf("waited %s on another daemon's pid file", elapsed)
+	}
+
+	// A pid file a crash left behind names no process to wait for.
+	stale := math.MaxInt32
+	writePid(stale)
+	started = time.Now()
+	waitForDaemonExit(ctx, pidPath, stale, started.Add(5*time.Second))
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Errorf("waited %s on a stale pid file", elapsed)
+	}
+
+	// Past the deadline the caller's own timeout takes over.
+	writePid(old)
+	started = time.Now()
+	waitForDaemonExit(ctx, pidPath, old, started.Add(200*time.Millisecond))
+	if elapsed := time.Since(started); elapsed < 200*time.Millisecond {
+		t.Errorf("gave up after %s, before the deadline, with the pid file still in place", elapsed)
+	}
+}
+
+// `daemon stop` must not return before the old daemon has let go of the
+// single-instance lock, or a `daemon restart` starts a daemon that exits as
+// "already running".
+func TestDaemonStopReturnsAfterThePidFileIsGone(t *testing.T) {
+	f := startFixture(t)
+	p, err := platform.New()
+	if err != nil {
+		t.Fatalf("platform.New: %v", err)
+	}
+	pidPath := platform.PidFilePath(p)
+	if _, err := os.Stat(pidPath); err != nil {
+		t.Fatalf("the running daemon must have a pid file: %v", err)
+	}
+
+	out, errOut, code := runCLI(t, "daemon", "stop")
+	if code != ExitOK {
+		t.Fatalf("daemon stop exit = %d\n%s%s", code, out, errOut)
+	}
+	if _, err := os.Stat(pidPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("daemon stop returned with the pid file still present (stat: %v)", err)
+	}
+
+	f.stopped = true
+	select {
+	case err := <-f.done:
+		if err != nil {
+			t.Errorf("daemon.Run: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("daemon did not exit")
 	}
 }
 
