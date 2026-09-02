@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Vadym903/Intenter/internal/daemon"
 	"github.com/Vadym903/Intenter/internal/platform"
 	"github.com/Vadym903/Intenter/internal/version"
 )
@@ -165,12 +166,25 @@ func TestWaitForDaemonExitOutlastsThePidFile(t *testing.T) {
 
 	// The old process is still tearing down: wait until it removes its pid file.
 	writePid(old)
+	removed := make(chan error, 1)
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		os.Remove(pidPath)
+		// Windows may refuse the first attempts: a scanner, or the poll
+		// under test, can be holding the file open.
+		var err error
+		for attempt := 0; attempt < 100; attempt++ {
+			if err = os.Remove(pidPath); err == nil || errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		removed <- err
 	}()
 	started := time.Now()
 	waitForDaemonExit(ctx, pidPath, old, started.Add(5*time.Second))
+	if err := <-removed; err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the test could not remove its own pid file: %v", err)
+	}
 	if _, err := os.Stat(pidPath); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("returned while the pid file still existed (stat: %v)", err)
 	}
@@ -208,23 +222,27 @@ func TestWaitForDaemonExitOutlastsThePidFile(t *testing.T) {
 // `daemon stop` must not return before the old daemon has let go of the
 // single-instance lock, or a `daemon restart` starts a daemon that exits as
 // "already running".
-func TestDaemonStopReturnsAfterThePidFileIsGone(t *testing.T) {
+func TestDaemonStopReturnsAfterTheLockIsFree(t *testing.T) {
 	f := startFixture(t)
 	p, err := platform.New()
 	if err != nil {
 		t.Fatalf("platform.New: %v", err)
 	}
-	pidPath := platform.PidFilePath(p)
-	if _, err := os.Stat(pidPath); err != nil {
-		t.Fatalf("the running daemon must have a pid file: %v", err)
+	lockPath, pidPath := platform.LockFilePath(p), platform.PidFilePath(p)
+	if _, err := daemon.AcquireLock(lockPath, pidPath); err == nil {
+		t.Fatal("the running daemon must hold the lock")
 	}
 
 	out, errOut, code := runCLI(t, "daemon", "stop")
 	if code != ExitOK {
 		t.Fatalf("daemon stop exit = %d\n%s%s", code, out, errOut)
 	}
-	if _, err := os.Stat(pidPath); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("daemon stop returned with the pid file still present (stat: %v)", err)
+	// The next daemon starts the moment `stop` returns; it must get the lock.
+	next, err := daemon.AcquireLock(lockPath, pidPath)
+	if err != nil {
+		t.Errorf("daemon stop returned with the lock still held: %v", err)
+	} else {
+		next.Release()
 	}
 
 	f.stopped = true
